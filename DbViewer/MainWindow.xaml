@@ -9,27 +9,136 @@
         WindowStartupLocation="CenterScreen"
         Background="#F5F7FB">
 
+    <Window.Resources>
+
+        <!-- 큰 글래스 패널 -->
+        <LinearGradientBrush x:Key="GlassPanelBrush" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#66FFFFFF" Offset="0"/>
+            <GradientStop Color="#4DEFF7FF" Offset="1"/>
+        </LinearGradientBrush>
+
+        <!-- 일반 유리 버튼 -->
+        <LinearGradientBrush x:Key="GlassButtonBrush" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#A8FFFFFF" Offset="0"/>
+            <GradientStop Color="#66EAF6FF" Offset="1"/>
+        </LinearGradientBrush>
+
+        <!-- 빨간 강조 유리 버튼 -->
+        <LinearGradientBrush x:Key="GlassPrimaryButtonBrush" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#F7FF6A4D" Offset="0"/>
+            <GradientStop Color="#E8FF3B26" Offset="1"/>
+        </LinearGradientBrush>
+
+        <SolidColorBrush x:Key="GlassBorderBlueBrush" Color="#88D9E8F8"/>
+
+        <DropShadowEffect x:Key="GlassShadow"
+                          BlurRadius="26"
+                          ShadowDepth="0"
+                          Opacity="0.15"
+                          Color="#6D8FAF"/>
+
+        <DropShadowEffect x:Key="ButtonShadow"
+                          BlurRadius="18"
+                          ShadowDepth="0"
+                          Opacity="0.16"
+                          Color="#6F8FAF"/>
+
+        <!-- 통계/필터 전용 버튼 스타일 -->
+        <Style x:Key="FilterStatButtonStyle" TargetType="Button">
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Background" Value="{StaticResource GlassButtonBrush}"/>
+            <Setter Property="BorderBrush" Value="#DFFFFFFF"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="8,10"/>
+            <Setter Property="Margin" Value="4"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Root"
+                        Background="{TemplateBinding Background}"
+                        BorderBrush="{TemplateBinding BorderBrush}"
+                        BorderThickness="{TemplateBinding BorderThickness}"
+                        CornerRadius="15"
+                        SnapsToDevicePixels="True">
+
+                            <Border.Effect>
+                                <DropShadowEffect BlurRadius="18"
+                                          ShadowDepth="0"
+                                          Opacity="0.18"
+                                          Color="#6F8FAF"/>
+                            </Border.Effect>
+
+                            <Grid>
+                                <!-- 버튼 상단 하이라이트: 유리 버튼처럼 보이게 하는 핵심 -->
+                                <Border Height="18"
+                                VerticalAlignment="Top"
+                                CornerRadius="15,15,0,0"
+                                Background="#55FFFFFF"/>
+
+                                <!-- 버튼 하단 음영: 눌릴 수 있는 버튼처럼 입체감 추가 -->
+                                <Border VerticalAlignment="Bottom"
+                                Height="16"
+                                CornerRadius="0,0,15,15"
+                                Background="#12000000"/>
+
+                                <ContentPresenter HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"/>
+                            </Grid>
+                        </Border>
+
+                        <ControlTemplate.Triggers>
+                            <!-- 마우스 올렸을 때 -->
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="#B8FFFFFF"/>
+                                <Setter TargetName="Root" Property="BorderBrush" Value="#FFFFFFFF"/>
+                            </Trigger>
+
+                            <!-- 눌렀을 때 -->
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="#88DDEBFF"/>
+                                <Setter TargetName="Root" Property="RenderTransform">
+                                    <Setter.Value>
+                                        <TranslateTransform Y="1"/>
+                                    </Setter.Value>
+                                </Setter>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="GlassPanelStyle" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource GlassPanelBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource GlassBorderBlueBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="20"/>
+            <Setter Property="Effect" Value="{StaticResource GlassShadow}"/>
+        </Style>
+
+        <Style x:Key="GlassButtonStyle" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource GlassButtonBrush}"/>
+            <Setter Property="BorderBrush" Value="#DFFFFFFF"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="18"/>
+            <Setter Property="Effect" Value="{StaticResource ButtonShadow}"/>
+        </Style>
+
+    </Window.Resources>
+
     <Grid>
-        <!-- 배경 이미지: Build Action = Resource 필요 -->
+        <!-- 배경 이미지: Background.png의 빌드 작업은 '리소스'여야 함 -->
         <Image Source="/Assets/Images/Background.png"
                Stretch="UniformToFill"
                Opacity="1"/>
 
-        <!-- 밝기 보정 오버레이 -->
-        <Border Background="#55FFFFFF"/>
+        <Border Background="#04FFFFFF"/>
 
         <!-- 메인 글래스 컨테이너 -->
         <Border Margin="24"
+                Style="{StaticResource GlassPanelStyle}"
                 CornerRadius="28"
-                Background="#DDFBFDFF"
-                BorderBrush="#E8F1FF"
-                BorderThickness="1"
                 Padding="22">
-            <Border.Effect>
-                <DropShadowEffect BlurRadius="28"
-                                  ShadowDepth="0"
-                                  Opacity="0.18"/>
-            </Border.Effect>
 
             <Grid>
                 <Grid.RowDefinitions>
@@ -40,18 +149,15 @@
 
                 <!-- Header -->
                 <Grid Grid.Row="0" Margin="0,0,0,10">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-
-                    <StackPanel Grid.Column="0"
-                                Orientation="Horizontal"
+                    <StackPanel Orientation="Horizontal"
                                 VerticalAlignment="Center">
+
                         <Border Width="52"
                                 Height="52"
                                 CornerRadius="16"
-                                Background="#FF5A3D"
+                                Background="{StaticResource GlassPrimaryButtonBrush}"
+                                BorderBrush="#CCFFFFFF"
+                                BorderThickness="1"
                                 Margin="0,0,16,0">
                             <TextBlock Text="🔥"
                                        FontSize="28"
@@ -67,22 +173,30 @@
                     </StackPanel>
                 </Grid>
 
-                <!-- Action Button Bar: 화면 폭에 맞게 6개 버튼 균등 분배 -->
+                <!-- Action Button Bar: DB 선택 / DB 복구 / 인쇄 3개가 전체 폭에 맞춰 같이 늘어남 -->
                 <Border Grid.Row="1"
-                        Background="#BFFFFFFF"
+                        Style="{StaticResource GlassPanelStyle}"
                         CornerRadius="22"
-                        BorderBrush="#E4ECF7"
-                        BorderThickness="1"
                         Padding="12"
                         Margin="0,0,0,12">
 
-                    <UniformGrid Columns="6"
+                    <UniformGrid Columns="3"
                                  Rows="1">
 
-                        <Border Background="#FF5A3D"
-                                CornerRadius="16"
-                                Padding="12,13"
-                                Margin="4">
+                        <!-- DB 선택 -->
+                        <Border Background="{StaticResource GlassPrimaryButtonBrush}"
+                                BorderBrush="#CCFFFFFF"
+                                BorderThickness="1"
+                                CornerRadius="18"
+                                Padding="22,13"
+                                Margin="4,4,1,4">
+                            <Border.Effect>
+                                <DropShadowEffect BlurRadius="18"
+                                                  ShadowDepth="0"
+                                                  Opacity="0.20"
+                                                  Color="#CC6A4A"/>
+                            </Border.Effect>
+
                             <StackPanel Orientation="Horizontal"
                                         HorizontalAlignment="Center">
                                 <TextBlock Text="🗄"
@@ -98,32 +212,11 @@
                             </StackPanel>
                         </Border>
 
-                        <Border Background="#F9FCFF"
-                                CornerRadius="16"
-                                Padding="12,13"
-                                Margin="4"
-                                BorderBrush="#DDE7F5"
-                                BorderThickness="1">
-                            <StackPanel Orientation="Horizontal"
-                                        HorizontalAlignment="Center">
-                                <TextBlock Text="📂"
-                                           FontSize="20"
-                                           Margin="0,0,8,0"
-                                           VerticalAlignment="Center"/>
-                                <TextBlock Text="DB 보기"
-                                           FontSize="15"
-                                           FontWeight="Bold"
-                                           Foreground="#102044"
-                                           VerticalAlignment="Center"/>
-                            </StackPanel>
-                        </Border>
-
-                        <Border Background="#F9FCFF"
-                                CornerRadius="16"
-                                Padding="12,13"
-                                Margin="4"
-                                BorderBrush="#DDE7F5"
-                                BorderThickness="1">
+                        <!-- DB 복구 -->
+                        <Border Style="{StaticResource GlassButtonStyle}"
+                                CornerRadius="18"
+                                Padding="22,13"
+                                Margin="4">
                             <StackPanel Orientation="Horizontal"
                                         HorizontalAlignment="Center">
                                 <TextBlock Text="↩"
@@ -139,33 +232,11 @@
                             </StackPanel>
                         </Border>
 
-                        <Border Background="#F9FCFF"
-                                CornerRadius="16"
-                                Padding="12,13"
-                                Margin="4"
-                                BorderBrush="#DDE7F5"
-                                BorderThickness="1">
-                            <StackPanel Orientation="Horizontal"
-                                        HorizontalAlignment="Center">
-                                <TextBlock Text="＋"
-                                           FontSize="23"
-                                           Foreground="#00A66A"
-                                           Margin="0,0,8,0"
-                                           VerticalAlignment="Center"/>
-                                <TextBlock Text="보고서 저장"
-                                           FontSize="15"
-                                           FontWeight="Bold"
-                                           Foreground="#0C7A51"
-                                           VerticalAlignment="Center"/>
-                            </StackPanel>
-                        </Border>
-
-                        <Border Background="#F9FCFF"
-                                CornerRadius="16"
-                                Padding="12,13"
-                                Margin="4"
-                                BorderBrush="#DDE7F5"
-                                BorderThickness="1">
+                        <!-- 인쇄 -->
+                        <Border Style="{StaticResource GlassButtonStyle}"
+                                CornerRadius="18"
+                                Padding="22,13"
+                                Margin="4">
                             <StackPanel Orientation="Horizontal"
                                         HorizontalAlignment="Center">
                                 <TextBlock Text="🖨"
@@ -180,26 +251,6 @@
                             </StackPanel>
                         </Border>
 
-                        <Border Background="#F9FCFF"
-                                CornerRadius="16"
-                                Padding="12,13"
-                                Margin="4"
-                                BorderBrush="#DDE7F5"
-                                BorderThickness="1">
-                            <StackPanel Orientation="Horizontal"
-                                        HorizontalAlignment="Center">
-                                <TextBlock Text="↻"
-                                           FontSize="23"
-                                           Foreground="#1467F2"
-                                           Margin="0,0,8,0"
-                                           VerticalAlignment="Center"/>
-                                <TextBlock Text="새로고침"
-                                           FontSize="15"
-                                           FontWeight="Bold"
-                                           Foreground="#1467F2"
-                                           VerticalAlignment="Center"/>
-                            </StackPanel>
-                        </Border>
                     </UniformGrid>
                 </Border>
 
@@ -212,12 +263,10 @@
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
-                    <!-- 검색 조건 -->
+                    <!-- Search Panel -->
                     <Border Grid.Row="0"
-                            Background="#BFFFFFFF"
+                            Style="{StaticResource GlassPanelStyle}"
                             CornerRadius="20"
-                            BorderBrush="#E4ECF7"
-                            BorderThickness="1"
                             Padding="16"
                             Margin="0,0,0,10">
 
@@ -227,16 +276,17 @@
                                 <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
-                            <!-- 날짜 조건: 폭에 따라 입력칸도 같이 늘어남 -->
+                            <!-- 날짜 조건: 시작일/종료일/기간 조회/전체/7일/30일이 전부 폭에 맞춰 같이 늘어남 -->
                             <Grid Grid.Row="0"
                                   Margin="0,0,0,10">
+
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto"/>
                                     <ColumnDefinition Width="1.2*"/>
                                     <ColumnDefinition Width="Auto"/>
                                     <ColumnDefinition Width="1.2*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="2*"/>
+                                    <ColumnDefinition Width="1.0*"/>
+                                    <ColumnDefinition Width="1.3*"/>
                                 </Grid.ColumnDefinitions>
 
                                 <TextBlock Grid.Column="0"
@@ -248,12 +298,10 @@
                                            Margin="0,0,10,0"/>
 
                                 <Border Grid.Column="1"
-                                        Background="#F9FCFF"
-                                        BorderBrush="#DDE7F5"
-                                        BorderThickness="1"
-                                        CornerRadius="12"
+                                        Style="{StaticResource GlassButtonStyle}"
+                                        CornerRadius="14"
                                         Padding="14,9"
-                                        Margin="0,0,14,0">
+                                        Margin="0,0,18,0">
                                     <TextBlock Text="2026-06-01"
                                                FontSize="14"
                                                Foreground="#102044"/>
@@ -268,74 +316,36 @@
                                            Margin="0,0,10,0"/>
 
                                 <Border Grid.Column="3"
-                                        Background="#F9FCFF"
-                                        BorderBrush="#DDE7F5"
-                                        BorderThickness="1"
-                                        CornerRadius="12"
+                                        Style="{StaticResource GlassButtonStyle}"
+                                        CornerRadius="14"
                                         Padding="14,9"
-                                        Margin="0,0,14,0">
+                                        Margin="0,0,18,0">
                                     <TextBlock Text="2026-06-04"
                                                FontSize="14"
                                                Foreground="#102044"/>
                                 </Border>
 
                                 <Border Grid.Column="4"
-                                        Background="#FF5A3D"
+                                        Background="{StaticResource GlassPrimaryButtonBrush}"
+                                        BorderBrush="#CCFFFFFF"
+                                        BorderThickness="1"
                                         CornerRadius="14"
-                                        Padding="20,10"
-                                        Margin="0,0,14,0">
+                                        Padding="24,10"
+                                        Margin="0,0,18,0">
                                     <TextBlock Text="기간 조회"
                                                FontSize="14"
                                                FontWeight="Bold"
-                                               Foreground="White"/>
+                                               Foreground="White"
+                                               HorizontalAlignment="Center"/>
                                 </Border>
 
                                 <UniformGrid Grid.Column="5"
-                                             Columns="4"
+                                             Columns="3"
                                              Rows="1">
-                                    <Border Background="#F9FCFF"
-                                            CornerRadius="12"
-                                            BorderBrush="#DDE7F5"
-                                            BorderThickness="1"
-                                            Padding="10,9"
-                                            Margin="3">
-                                        <TextBlock Text="오늘"
-                                                   FontSize="13"
-                                                   FontWeight="SemiBold"
-                                                   Foreground="#23395D"
-                                                   HorizontalAlignment="Center"/>
-                                    </Border>
 
-                                    <Border Background="#F9FCFF"
-                                            CornerRadius="12"
-                                            BorderBrush="#DDE7F5"
-                                            BorderThickness="1"
-                                            Padding="10,9"
-                                            Margin="3">
-                                        <TextBlock Text="최근 7일"
-                                                   FontSize="13"
-                                                   FontWeight="SemiBold"
-                                                   Foreground="#23395D"
-                                                   HorizontalAlignment="Center"/>
-                                    </Border>
-
-                                    <Border Background="#F9FCFF"
-                                            CornerRadius="12"
-                                            BorderBrush="#DDE7F5"
-                                            BorderThickness="1"
-                                            Padding="10,9"
-                                            Margin="3">
-                                        <TextBlock Text="이번 달"
-                                                   FontSize="13"
-                                                   FontWeight="SemiBold"
-                                                   Foreground="#23395D"
-                                                   HorizontalAlignment="Center"/>
-                                    </Border>
-
-                                    <Border Background="#EEF5FF"
-                                            CornerRadius="12"
-                                            BorderBrush="#D7E7FF"
-                                            BorderThickness="1"
+                                    <Border Style="{StaticResource GlassButtonStyle}"
+                                            Background="#9CEEF5FF"
+                                            CornerRadius="14"
                                             Padding="10,9"
                                             Margin="3">
                                         <TextBlock Text="전체"
@@ -344,21 +354,43 @@
                                                    Foreground="#1467F2"
                                                    HorizontalAlignment="Center"/>
                                     </Border>
+
+                                    <Border Style="{StaticResource GlassButtonStyle}"
+                                            CornerRadius="14"
+                                            Padding="10,9"
+                                            Margin="3">
+                                        <TextBlock Text="7일"
+                                                   FontSize="13"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="#23395D"
+                                                   HorizontalAlignment="Center"/>
+                                    </Border>
+
+                                    <Border Style="{StaticResource GlassButtonStyle}"
+                                            CornerRadius="14"
+                                            Padding="10,9"
+                                            Margin="3">
+                                        <TextBlock Text="30일"
+                                                   FontSize="13"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="#23395D"
+                                                   HorizontalAlignment="Center"/>
+                                    </Border>
+
                                 </UniformGrid>
                             </Grid>
 
-                            <!-- 검색 조건: 검색어 칸이 화면에 맞춰 늘어남 -->
+                            <!-- 검색창: 검색어 입력창이 창 폭에 맞춰 늘어남 -->
                             <Grid Grid.Row="1">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="1.2*"/>
-                                    <ColumnDefinition Width="2.8*"/>
+                                    <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
 
                                 <TextBlock Grid.Column="0"
-                                           Text="검색 기준"
+                                           Text="검색창"
                                            FontSize="14"
                                            FontWeight="Bold"
                                            Foreground="#102044"
@@ -366,33 +398,21 @@
                                            Margin="0,0,10,0"/>
 
                                 <Border Grid.Column="1"
-                                        Background="#F9FCFF"
-                                        BorderBrush="#DDE7F5"
-                                        BorderThickness="1"
-                                        CornerRadius="12"
-                                        Padding="14,9"
-                                        Margin="0,0,14,0">
-                                    <TextBlock Text="전체"
-                                               FontSize="14"
-                                               Foreground="#102044"/>
-                                </Border>
-
-                                <Border Grid.Column="2"
-                                        Background="#F9FCFF"
-                                        BorderBrush="#DDE7F5"
-                                        BorderThickness="1"
-                                        CornerRadius="12"
+                                        Style="{StaticResource GlassButtonStyle}"
+                                        CornerRadius="14"
                                         Padding="14,9"
                                         Margin="0,0,14,0">
                                     <TextBlock Text="검색어를 입력하세요"
                                                FontSize="14"
-                                               Foreground="#9AA6BA"/>
+                                               Foreground="#66748C"/>
                                 </Border>
 
-                                <Border Grid.Column="3"
-                                        Background="#FF5A3D"
+                                <Border Grid.Column="2"
+                                        Background="{StaticResource GlassPrimaryButtonBrush}"
+                                        BorderBrush="#CCFFFFFF"
+                                        BorderThickness="1"
                                         CornerRadius="14"
-                                        Padding="26,10"
+                                        Padding="28,10"
                                         Margin="0,0,10,0">
                                     <TextBlock Text="검색"
                                                FontSize="14"
@@ -400,11 +420,9 @@
                                                Foreground="White"/>
                                 </Border>
 
-                                <Border Grid.Column="4"
-                                        Background="#F9FCFF"
+                                <Border Grid.Column="3"
+                                        Style="{StaticResource GlassButtonStyle}"
                                         CornerRadius="14"
-                                        BorderBrush="#DDE7F5"
-                                        BorderThickness="1"
                                         Padding="24,10">
                                     <TextBlock Text="초기화"
                                                FontSize="14"
@@ -415,215 +433,86 @@
                         </Grid>
                     </Border>
 
-                    <!-- 통계 + 필터 버튼: 1080 폭에 맞춰 9개 균등 분배 -->
+                    <!-- 통계 + 필터 버튼: 9개 카드가 전체 폭에 맞춰 같이 늘어남 -->
                     <Border Grid.Row="1"
-                            Background="#BFFFFFFF"
+                            Style="{StaticResource GlassPanelStyle}"
                             CornerRadius="20"
-                            BorderBrush="#E4ECF7"
-                            BorderThickness="1"
                             Padding="10"
                             Margin="0,0,0,10">
 
                         <UniformGrid Columns="9"
                                      Rows="1">
 
-                            <Border Background="#EEF5FF"
-                                    CornerRadius="15"
-                                    Padding="8,10"
-                                    Margin="4"
-                                    BorderBrush="#D7E7FF"
-                                    BorderThickness="1">
+                            <Border Style="{StaticResource GlassButtonStyle}" Background="#88EFF6FF" CornerRadius="15" Padding="8,10" Margin="4">
                                 <StackPanel>
-                                    <TextBlock Text="전체 로그"
-                                               FontSize="12"
-                                               FontWeight="Bold"
-                                               Foreground="#102044"
-                                               HorizontalAlignment="Center"/>
-                                    <TextBlock Text="52,341"
-                                               FontSize="21"
-                                               FontWeight="Bold"
-                                               Foreground="#1467F2"
-                                               HorizontalAlignment="Center"
-                                               Margin="0,3,0,0"/>
+                                    <TextBlock Text="전체 로그" FontSize="12" FontWeight="Bold" Foreground="#102044" HorizontalAlignment="Center"/>
+                                    <TextBlock Text="52,341" FontSize="21" FontWeight="Bold" Foreground="#1467F2" HorizontalAlignment="Center" Margin="0,3,0,0"/>
                                 </StackPanel>
                             </Border>
 
-                            <Border Background="#FFF5F3"
-                                    CornerRadius="15"
-                                    Padding="8,10"
-                                    Margin="4"
-                                    BorderBrush="#FFE0DA"
-                                    BorderThickness="1">
+                            <Border Style="{StaticResource GlassButtonStyle}" Background="#88FFF1EE" CornerRadius="15" Padding="8,10" Margin="4">
                                 <StackPanel>
-                                    <TextBlock Text="화재"
-                                               FontSize="12"
-                                               FontWeight="Bold"
-                                               Foreground="#102044"
-                                               HorizontalAlignment="Center"/>
-                                    <TextBlock Text="34"
-                                               FontSize="21"
-                                               FontWeight="Bold"
-                                               Foreground="#FF3B30"
-                                               HorizontalAlignment="Center"
-                                               Margin="0,3,0,0"/>
+                                    <TextBlock Text="화재" FontSize="12" FontWeight="Bold" Foreground="#102044" HorizontalAlignment="Center"/>
+                                    <TextBlock Text="34" FontSize="21" FontWeight="Bold" Foreground="#FF3B30" HorizontalAlignment="Center" Margin="0,3,0,0"/>
                                 </StackPanel>
                             </Border>
 
-                            <Border Background="#F7FAFF"
-                                    CornerRadius="15"
-                                    Padding="8,10"
-                                    Margin="4"
-                                    BorderBrush="#D7E7FF"
-                                    BorderThickness="1">
+                            <Border Style="{StaticResource GlassButtonStyle}" Background="#88F3F8FF" CornerRadius="15" Padding="8,10" Margin="4">
                                 <StackPanel>
-                                    <TextBlock Text="제경보"
-                                               FontSize="12"
-                                               FontWeight="Bold"
-                                               Foreground="#102044"
-                                               HorizontalAlignment="Center"/>
-                                    <TextBlock Text="18"
-                                               FontSize="21"
-                                               FontWeight="Bold"
-                                               Foreground="#1467F2"
-                                               HorizontalAlignment="Center"
-                                               Margin="0,3,0,0"/>
+                                    <TextBlock Text="제경보" FontSize="12" FontWeight="Bold" Foreground="#102044" HorizontalAlignment="Center"/>
+                                    <TextBlock Text="18" FontSize="21" FontWeight="Bold" Foreground="#1467F2" HorizontalAlignment="Center" Margin="0,3,0,0"/>
                                 </StackPanel>
                             </Border>
 
-                            <Border Background="#FFF8ED"
-                                    CornerRadius="15"
-                                    Padding="6,10"
-                                    Margin="4"
-                                    BorderBrush="#FFE8C6"
-                                    BorderThickness="1">
+                            <Border Style="{StaticResource GlassButtonStyle}" Background="#88FFF8EC" CornerRadius="15" Padding="8,10" Margin="4">
                                 <StackPanel>
-                                    <TextBlock Text="중계기 고장"
-                                               FontSize="11"
-                                               FontWeight="Bold"
-                                               Foreground="#102044"
-                                               HorizontalAlignment="Center"/>
-                                    <TextBlock Text="76"
-                                               FontSize="21"
-                                               FontWeight="Bold"
-                                               Foreground="#F05A00"
-                                               HorizontalAlignment="Center"
-                                               Margin="0,3,0,0"/>
+                                    <TextBlock Text="중계기 고장" FontSize="11" FontWeight="Bold" Foreground="#102044" HorizontalAlignment="Center"/>
+                                    <TextBlock Text="76" FontSize="21" FontWeight="Bold" Foreground="#F05A00" HorizontalAlignment="Center" Margin="0,3,0,0"/>
                                 </StackPanel>
                             </Border>
 
-                            <Border Background="#FFF8ED"
-                                    CornerRadius="15"
-                                    Padding="8,10"
-                                    Margin="4"
-                                    BorderBrush="#FFE8C6"
-                                    BorderThickness="1">
+                            <Border Style="{StaticResource GlassButtonStyle}" Background="#88FFF8EC" CornerRadius="15" Padding="8,10" Margin="4">
                                 <StackPanel>
-                                    <TextBlock Text="AN 고장"
-                                               FontSize="12"
-                                               FontWeight="Bold"
-                                               Foreground="#102044"
-                                               HorizontalAlignment="Center"/>
-                                    <TextBlock Text="9"
-                                               FontSize="21"
-                                               FontWeight="Bold"
-                                               Foreground="#F05A00"
-                                               HorizontalAlignment="Center"
-                                               Margin="0,3,0,0"/>
+                                    <TextBlock Text="AN 고장" FontSize="12" FontWeight="Bold" Foreground="#102044" HorizontalAlignment="Center"/>
+                                    <TextBlock Text="9" FontSize="21" FontWeight="Bold" Foreground="#F05A00" HorizontalAlignment="Center" Margin="0,3,0,0"/>
                                 </StackPanel>
                             </Border>
 
-                            <Border Background="#FFF8ED"
-                                    CornerRadius="15"
-                                    Padding="8,10"
-                                    Margin="4"
-                                    BorderBrush="#FFE8C6"
-                                    BorderThickness="1">
+                            <Border Style="{StaticResource GlassButtonStyle}" Background="#88FFF8EC" CornerRadius="15" Padding="8,10" Margin="4">
                                 <StackPanel>
-                                    <TextBlock Text="단선"
-                                               FontSize="12"
-                                               FontWeight="Bold"
-                                               Foreground="#102044"
-                                               HorizontalAlignment="Center"/>
-                                    <TextBlock Text="128"
-                                               FontSize="21"
-                                               FontWeight="Bold"
-                                               Foreground="#F07800"
-                                               HorizontalAlignment="Center"
-                                               Margin="0,3,0,0"/>
+                                    <TextBlock Text="단선" FontSize="12" FontWeight="Bold" Foreground="#102044" HorizontalAlignment="Center"/>
+                                    <TextBlock Text="128" FontSize="21" FontWeight="Bold" Foreground="#F07800" HorizontalAlignment="Center" Margin="0,3,0,0"/>
                                 </StackPanel>
                             </Border>
 
-                            <Border Background="#F0FFFC"
-                                    CornerRadius="15"
-                                    Padding="8,10"
-                                    Margin="4"
-                                    BorderBrush="#CDEFEA"
-                                    BorderThickness="1">
+                            <Border Style="{StaticResource GlassButtonStyle}" Background="#88EFFCF9" CornerRadius="15" Padding="8,10" Margin="4">
                                 <StackPanel>
-                                    <TextBlock Text="출력"
-                                               FontSize="12"
-                                               FontWeight="Bold"
-                                               Foreground="#102044"
-                                               HorizontalAlignment="Center"/>
-                                    <TextBlock Text="41"
-                                               FontSize="21"
-                                               FontWeight="Bold"
-                                               Foreground="#008C86"
-                                               HorizontalAlignment="Center"
-                                               Margin="0,3,0,0"/>
+                                    <TextBlock Text="출력" FontSize="12" FontWeight="Bold" Foreground="#102044" HorizontalAlignment="Center"/>
+                                    <TextBlock Text="41" FontSize="21" FontWeight="Bold" Foreground="#008C86" HorizontalAlignment="Center" Margin="0,3,0,0"/>
                                 </StackPanel>
                             </Border>
 
-                            <Border Background="#F5F0FF"
-                                    CornerRadius="15"
-                                    Padding="8,10"
-                                    Margin="4"
-                                    BorderBrush="#E2D4FF"
-                                    BorderThickness="1">
+                            <Border Style="{StaticResource GlassButtonStyle}" Background="#88F6F1FF" CornerRadius="15" Padding="8,10" Margin="4">
                                 <StackPanel>
-                                    <TextBlock Text="MCC"
-                                               FontSize="12"
-                                               FontWeight="Bold"
-                                               Foreground="#102044"
-                                               HorizontalAlignment="Center"/>
-                                    <TextBlock Text="12"
-                                               FontSize="21"
-                                               FontWeight="Bold"
-                                               Foreground="#7C3FE8"
-                                               HorizontalAlignment="Center"
-                                               Margin="0,3,0,0"/>
+                                    <TextBlock Text="MCC" FontSize="12" FontWeight="Bold" Foreground="#102044" HorizontalAlignment="Center"/>
+                                    <TextBlock Text="12" FontSize="21" FontWeight="Bold" Foreground="#7C3FE8" HorizontalAlignment="Center" Margin="0,3,0,0"/>
                                 </StackPanel>
                             </Border>
 
-                            <Border Background="#F9FCFF"
-                                    CornerRadius="15"
-                                    Padding="8,10"
-                                    Margin="4"
-                                    BorderBrush="#DDE7F5"
-                                    BorderThickness="1">
+                            <Border Style="{StaticResource GlassButtonStyle}" Background="#88F8FAFD" CornerRadius="15" Padding="8,10" Margin="4">
                                 <StackPanel>
-                                    <TextBlock Text="기타"
-                                               FontSize="12"
-                                               FontWeight="Bold"
-                                               Foreground="#102044"
-                                               HorizontalAlignment="Center"/>
-                                    <TextBlock Text="23"
-                                               FontSize="21"
-                                               FontWeight="Bold"
-                                               Foreground="#6B7892"
-                                               HorizontalAlignment="Center"
-                                               Margin="0,3,0,0"/>
+                                    <TextBlock Text="기타" FontSize="12" FontWeight="Bold" Foreground="#102044" HorizontalAlignment="Center"/>
+                                    <TextBlock Text="23" FontSize="21" FontWeight="Bold" Foreground="#6B7892" HorizontalAlignment="Center" Margin="0,3,0,0"/>
                                 </StackPanel>
                             </Border>
                         </UniformGrid>
                     </Border>
 
-                    <!-- 로그 테이블: 모든 컬럼이 비율로 같이 늘어남 -->
+                    <!-- 로그 테이블: 컬럼이 전체 폭에 맞춰 비율로 늘어남 -->
                     <Border Grid.Row="2"
-                            Background="#CCFFFFFF"
+                            Style="{StaticResource GlassPanelStyle}"
+                            Background="#66FFFFFF"
                             CornerRadius="20"
-                            BorderBrush="#E4ECF7"
-                            BorderThickness="1"
                             Margin="0,0,0,10">
 
                         <Grid>
@@ -633,7 +522,7 @@
                             </Grid.RowDefinitions>
 
                             <Grid Grid.Row="0"
-                                  Background="#EEF4FB">
+                                  Background="#99EEF4FB">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="1.5*"/>
                                     <ColumnDefinition Width="1.0*"/>
@@ -655,8 +544,7 @@
                                           VerticalScrollBarVisibility="Auto">
                                 <StackPanel>
 
-                                    <Grid Height="42"
-                                          Background="#FFFFFF">
+                                    <Grid Height="42" Background="#AAFFFFFF">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="1.5*"/>
                                             <ColumnDefinition Width="1.0*"/>
@@ -674,8 +562,7 @@
                                         <TextBlock Grid.Column="5" Text="10 02 01 01 7A 3C" Margin="10,0,0,0" VerticalAlignment="Center" Foreground="#263A5E" TextTrimming="CharacterEllipsis"/>
                                     </Grid>
 
-                                    <Grid Height="42"
-                                          Background="#F8FBFF">
+                                    <Grid Height="42" Background="#66F8FBFF">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="1.5*"/>
                                             <ColumnDefinition Width="1.0*"/>
@@ -693,8 +580,7 @@
                                         <TextBlock Grid.Column="5" Text="10 02 03 02 68 2F" Margin="10,0,0,0" VerticalAlignment="Center" Foreground="#263A5E" TextTrimming="CharacterEllipsis"/>
                                     </Grid>
 
-                                    <Grid Height="42"
-                                          Background="#FFFFFF">
+                                    <Grid Height="42" Background="#AAFFFFFF">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="1.5*"/>
                                             <ColumnDefinition Width="1.0*"/>
@@ -718,10 +604,8 @@
 
                     <!-- 페이지네이션 -->
                     <Border Grid.Row="3"
-                            Background="#BFFFFFFF"
+                            Style="{StaticResource GlassPanelStyle}"
                             CornerRadius="20"
-                            BorderBrush="#E4ECF7"
-                            BorderThickness="1"
                             Padding="16">
                         <Grid>
                             <Grid.ColumnDefinitions>
@@ -740,19 +624,34 @@
                             <StackPanel Grid.Column="1"
                                         Orientation="Horizontal"
                                         HorizontalAlignment="Center">
-                                <Border Background="#F9FCFF" CornerRadius="12" Padding="16,9" Margin="0,0,8,0" BorderBrush="#DDE7F5" BorderThickness="1">
+
+                                <Border Style="{StaticResource GlassButtonStyle}"
+                                        CornerRadius="12"
+                                        Padding="16,9"
+                                        Margin="0,0,8,0">
                                     <TextBlock Text="‹ 이전" FontWeight="Bold" Foreground="#23395D"/>
                                 </Border>
 
-                                <Border Background="#FF5A3D" CornerRadius="12" Padding="15,9" Margin="0,0,8,0">
+                                <Border Background="{StaticResource GlassPrimaryButtonBrush}"
+                                        BorderBrush="#CCFFFFFF"
+                                        BorderThickness="1"
+                                        CornerRadius="12"
+                                        Padding="15,9"
+                                        Margin="0,0,8,0">
                                     <TextBlock Text="1" FontWeight="Bold" Foreground="White"/>
                                 </Border>
 
-                                <Border Background="#F9FCFF" CornerRadius="12" Padding="15,9" Margin="0,0,8,0" BorderBrush="#DDE7F5" BorderThickness="1">
+                                <Border Style="{StaticResource GlassButtonStyle}"
+                                        CornerRadius="12"
+                                        Padding="15,9"
+                                        Margin="0,0,8,0">
                                     <TextBlock Text="2" FontWeight="Bold" Foreground="#23395D"/>
                                 </Border>
 
-                                <Border Background="#F9FCFF" CornerRadius="12" Padding="15,9" Margin="0,0,8,0" BorderBrush="#DDE7F5" BorderThickness="1">
+                                <Border Style="{StaticResource GlassButtonStyle}"
+                                        CornerRadius="12"
+                                        Padding="15,9"
+                                        Margin="0,0,8,0">
                                     <TextBlock Text="3" FontWeight="Bold" Foreground="#23395D"/>
                                 </Border>
 
@@ -762,17 +661,17 @@
                                            VerticalAlignment="Center"
                                            Margin="6,0,14,0"/>
 
-                                <Border Background="#F9FCFF" CornerRadius="12" Padding="16,9" BorderBrush="#DDE7F5" BorderThickness="1">
+                                <Border Style="{StaticResource GlassButtonStyle}"
+                                        CornerRadius="12"
+                                        Padding="16,9">
                                     <TextBlock Text="다음 ›" FontWeight="Bold" Foreground="#23395D"/>
                                 </Border>
                             </StackPanel>
 
                             <Border Grid.Column="2"
-                                    Background="#F9FCFF"
+                                    Style="{StaticResource GlassButtonStyle}"
                                     CornerRadius="12"
-                                    Padding="16,9"
-                                    BorderBrush="#DDE7F5"
-                                    BorderThickness="1">
+                                    Padding="16,9">
                                 <TextBlock Text="100건씩"
                                            FontWeight="Bold"
                                            Foreground="#23395D"/>
