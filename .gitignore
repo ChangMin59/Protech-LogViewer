@@ -1,0 +1,32 @@
+# Visual Studio cache
+.vs/
+
+# Build output
+bin/
+obj/
+
+# User-specific Visual Studio files
+*.user
+*.suo
+*.rsuser
+*.userosscache
+*.sln.docstates
+
+# Build configurations
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+
+# NuGet
+packages/
+*.nupkg
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
