@@ -16,4 +16,12 @@
     <Resource Include="Assets\Images\Background.png" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="Assets\Icons\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.8" />
+  </ItemGroup>
+
 </Project>
