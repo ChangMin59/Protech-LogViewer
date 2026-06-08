@@ -164,7 +164,6 @@
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
 
-                <!-- 상단 제목 -->
                 <Grid Grid.Row="0" Margin="0,0,0,12">
                     <StackPanel Orientation="Horizontal"
                                 VerticalAlignment="Center">
@@ -188,7 +187,6 @@
                     </StackPanel>
                 </Grid>
 
-                <!-- 상단 기능 버튼 -->
                 <Border Grid.Row="1"
                         Style="{StaticResource GlassSubPanelStyle}"
                         CornerRadius="22"
@@ -216,12 +214,10 @@
                             <Grid>
                                 <Border CornerRadius="18"
                                         Background="{StaticResource RealGlassPrimaryFillBrush}"/>
-
                                 <Border CornerRadius="18"
                                         Margin="1"
                                         BorderBrush="#40FFFFFF"
                                         BorderThickness="1"/>
-
                                 <Border CornerRadius="18,18,10,10"
                                         Height="21"
                                         Margin="1,1,1,0"
@@ -258,12 +254,10 @@
                             <Grid>
                                 <Border CornerRadius="18"
                                         Background="{StaticResource RealGlassButtonFillBrush}"/>
-
                                 <Border CornerRadius="18"
                                         Margin="1"
                                         BorderBrush="{StaticResource RealGlassInnerStrokeBrush}"
                                         BorderThickness="1"/>
-
                                 <Border CornerRadius="18,18,10,10"
                                         Height="21"
                                         Margin="1,1,1,0"
@@ -300,12 +294,10 @@
                             <Grid>
                                 <Border CornerRadius="18"
                                         Background="{StaticResource RealGlassButtonFillBrush}"/>
-
                                 <Border CornerRadius="18"
                                         Margin="1"
                                         BorderBrush="{StaticResource RealGlassInnerStrokeBrush}"
                                         BorderThickness="1"/>
-
                                 <Border CornerRadius="18,18,10,10"
                                         Height="21"
                                         Margin="1,1,1,0"
@@ -330,7 +322,6 @@
                     </Grid>
                 </Border>
 
-                <!-- 본문 영역 -->
                 <Grid Grid.Row="2">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -339,7 +330,6 @@
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
-                    <!-- 기간 / 검색 영역 -->
                     <Border Grid.Row="0"
                             Style="{StaticResource GlassSubPanelStyle}"
                             CornerRadius="20"
@@ -417,7 +407,6 @@
                                     x:Name="PeriodSearchButton"
                                     Style="{StaticResource PrimaryButtonStyle}"
                                     CornerRadius="14"
-                                    Padding="0"
                                     Height="42"
                                     Margin="0,0,10,0"
                                     Cursor="Hand">
@@ -435,7 +424,6 @@
                                     Style="{StaticResource GlassButtonStyle}"
                                     Background="#D8F2F8FF"
                                     CornerRadius="14"
-                                    Padding="0"
                                     Height="42"
                                     Margin="0,0,8,0"
                                     Cursor="Hand">
@@ -452,7 +440,6 @@
                                     x:Name="SevenDaysButton"
                                     Style="{StaticResource GlassButtonStyle}"
                                     CornerRadius="14"
-                                    Padding="0"
                                     Height="42"
                                     Margin="0,0,8,0"
                                     Cursor="Hand">
@@ -469,7 +456,6 @@
                                     x:Name="ThirtyDaysButton"
                                     Style="{StaticResource GlassButtonStyle}"
                                     CornerRadius="14"
-                                    Padding="0"
                                     Height="42"
                                     Margin="0,0,8,0"
                                     Cursor="Hand">
@@ -498,7 +484,6 @@
                                     Padding="14,9"
                                     Margin="0,12,10,0">
                                 <TextBox x:Name="SearchKeywordTextBox"
-                                         Text=""
                                          FontSize="14"
                                          Foreground="#263A5E"
                                          Background="Transparent"
@@ -511,7 +496,6 @@
                                     x:Name="SearchButton"
                                     Style="{StaticResource PrimaryButtonStyle}"
                                     CornerRadius="14"
-                                    Padding="0"
                                     Height="42"
                                     Margin="0,12,10,0"
                                     Cursor="Hand">
@@ -528,7 +512,6 @@
                                     x:Name="ResetButton"
                                     Style="{StaticResource GlassButtonStyle}"
                                     CornerRadius="14"
-                                    Padding="0"
                                     Height="42"
                                     Margin="0,12,8,0"
                                     Cursor="Hand">
@@ -545,7 +528,6 @@
                                     x:Name="Keyboard"
                                     Style="{StaticResource GlassButtonStyle}"
                                     CornerRadius="14"
-                                    Padding="0"
                                     Height="42"
                                     Margin="0,12,8,0"
                                     Cursor="Hand">
@@ -563,7 +545,6 @@
                                     x:Name="ModeToggleButton"
                                     Style="{StaticResource GlassButtonStyle}"
                                     CornerRadius="14"
-                                    Padding="0"
                                     Height="42"
                                     Margin="0,12,0,0"
                                     Cursor="Hand">
@@ -584,11 +565,9 @@
                                                VerticalAlignment="Center"/>
                                 </StackPanel>
                             </Border>
-
                         </Grid>
                     </Border>
 
-                    <!-- 카테고리 카드 -->
                     <Border Grid.Row="1"
                             Style="{StaticResource GlassSubPanelStyle}"
                             CornerRadius="20"
@@ -663,7 +642,6 @@
                         </UniformGrid>
                     </Border>
 
-                    <!-- 로그 테이블 -->
                     <Border Grid.Row="2"
                             Background="{StaticResource TablePanelBrush}"
                             BorderBrush="#E6FFFFFF"
@@ -691,7 +669,7 @@
                                         <ColumnDefinition Width="0.8*"/>
                                         <ColumnDefinition Width="1.8*"/>
                                         <ColumnDefinition Width="2.4*"/>
-                                        <ColumnDefinition Width="0.8*"/>
+                                        <ColumnDefinition Width="*"/>
                                     </Grid.ColumnDefinitions>
 
                                     <TextBlock Grid.Column="0" Text="발생시간" FontWeight="Bold" Foreground="#102044" HorizontalAlignment="Center" VerticalAlignment="Center"/>
@@ -713,7 +691,6 @@
                         </Grid>
                     </Border>
 
-                    <!-- 페이지네이션 / 표시 개수 -->
                     <Border Grid.Row="3"
                             Style="{StaticResource GlassSubPanelStyle}"
                             CornerRadius="20"
@@ -731,7 +708,7 @@
                                         x:Name="PaginationPanel"
                                         Orientation="Horizontal"
                                         HorizontalAlignment="Center"/>
-                            
+
                             <TextBlock Grid.Column="2"
                                        x:Name="TotalPageInfoText"
                                        Text="총 1페이지 · 0건"
@@ -792,7 +769,6 @@
             </Grid>
         </Border>
 
-        <!-- 표시 개수 드롭다운: 최상단 오버레이 -->
         <Border x:Name="PageSizeDropdown"
                 Width="150"
                 HorizontalAlignment="Right"
@@ -808,71 +784,26 @@
                 Effect="{StaticResource RealGlassButtonShadow}">
 
             <StackPanel>
-                <Border x:Name="PageSize1000Button"
-                        Height="42"
-                        CornerRadius="12"
-                        Cursor="Hand"
-                        Margin="0,0,0,4">
-                    <TextBlock Text="1,000건"
-                               FontSize="15"
-                               FontWeight="Bold"
-                               Foreground="#23395D"
-                               HorizontalAlignment="Center"
-                               VerticalAlignment="Center"/>
+                <Border x:Name="PageSize1000Button" Height="42" CornerRadius="12" Cursor="Hand" Margin="0,0,0,4">
+                    <TextBlock Text="1,000건" FontSize="15" FontWeight="Bold" Foreground="#23395D" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                 </Border>
 
-                <Border x:Name="PageSize5000Button"
-                        Height="42"
-                        CornerRadius="12"
-                        Cursor="Hand"
-                        Margin="0,0,0,4">
-                    <TextBlock Text="5,000건"
-                               FontSize="15"
-                               FontWeight="Bold"
-                               Foreground="#23395D"
-                               HorizontalAlignment="Center"
-                               VerticalAlignment="Center"/>
+                <Border x:Name="PageSize5000Button" Height="42" CornerRadius="12" Cursor="Hand" Margin="0,0,0,4">
+                    <TextBlock Text="5,000건" FontSize="15" FontWeight="Bold" Foreground="#23395D" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                 </Border>
 
-                <Border x:Name="PageSize10000Button"
-                        Height="42"
-                        CornerRadius="12"
-                        Cursor="Hand"
-                        Margin="0,0,0,4">
-                    <TextBlock Text="10,000건"
-                               FontSize="15"
-                               FontWeight="Bold"
-                               Foreground="#23395D"
-                               HorizontalAlignment="Center"
-                               VerticalAlignment="Center"/>
+                <Border x:Name="PageSize10000Button" Height="42" CornerRadius="12" Cursor="Hand" Margin="0,0,0,4">
+                    <TextBlock Text="10,000건" FontSize="15" FontWeight="Bold" Foreground="#23395D" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                 </Border>
 
-                <Border x:Name="PageSize50000Button"
-                        Height="42"
-                        CornerRadius="12"
-                        Cursor="Hand"
-                        Margin="0,0,0,4">
-                    <TextBlock Text="50,000건"
-                               FontSize="15"
-                               FontWeight="Bold"
-                               Foreground="#23395D"
-                               HorizontalAlignment="Center"
-                               VerticalAlignment="Center"/>
+                <Border x:Name="PageSize50000Button" Height="42" CornerRadius="12" Cursor="Hand" Margin="0,0,0,4">
+                    <TextBlock Text="50,000건" FontSize="15" FontWeight="Bold" Foreground="#23395D" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                 </Border>
 
-                <Border x:Name="PageSize100000Button"
-                        Height="42"
-                        CornerRadius="12"
-                        Cursor="Hand">
-                    <TextBlock Text="100,000건"
-                               FontSize="15"
-                               FontWeight="Bold"
-                               Foreground="#23395D"
-                               HorizontalAlignment="Center"
-                               VerticalAlignment="Center"/>
+                <Border x:Name="PageSize100000Button" Height="42" CornerRadius="12" Cursor="Hand">
+                    <TextBlock Text="100,000건" FontSize="15" FontWeight="Bold" Foreground="#23395D" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                 </Border>
             </StackPanel>
         </Border>
-
     </Grid>
 </Window>
