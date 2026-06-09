@@ -59,6 +59,30 @@ namespace DbViewer
         private DateTime? _dbStartDate;
         private DateTime? _dbEndDate;
         private bool _suppressDateCalendarChange = false;
+        private DateTime _ignoreCategoryClickUntil = DateTime.MinValue;
+
+        private readonly object _queryCacheLock = new();
+
+        private readonly Dictionary<string, List<LogRow>> _rowsCacheByKey = new();
+        private readonly Dictionary<string, Dictionary<string, List<LogRow>>> _categoryCacheByKey = new();
+        private readonly Dictionary<string, int> _totalCountCacheByKey = new();
+
+        private string _activeRowsCacheKey = "all";
+
+        private string _baseModeBeforeCategory = "all";
+        private string _baseCacheKeyBeforeCategory = "all";
+        private string _baseKeywordBeforeCategory = "";
+        private string _baseStartDateBeforeCategory = "";
+        private string _baseEndDateBeforeCategory = "";
+
+        private int _countJobVersion = 0;
+
+        private sealed class QueryCacheEntry
+        {
+            public List<LogRow> Rows { get; init; } = new();
+            public Dictionary<string, List<LogRow>> CategoryCache { get; init; } = new();
+            public int TotalCount => Rows.Count;
+        }
 
         public MainWindow()
         {
@@ -259,6 +283,7 @@ namespace DbViewer
                 UpdateCategoryCardActiveStates();
 
                 ResetCategoryCountText();
+                ClearQueryCaches();
                 SetLoadingState("이력 파일을 복사하는 중입니다...");
 
                 string copiedDbPath = await Task.Run(() =>
@@ -296,6 +321,8 @@ namespace DbViewer
 
                 TotalLogCountText.Text = _totalCount.ToString("N0");
 
+                UpdateCategoryCardActiveStates();
+
                 StartBackgroundCategoryCache();
 
                 await LoadCurrentPageAsync(showLoading: false);
@@ -309,6 +336,7 @@ namespace DbViewer
                 UpdateCategoryCardActiveStates();
 
                 ResetCategoryCountText();
+                ClearQueryCaches();
 
                 StartDateText.Text = "";
                 EndDateText.Text = "";
@@ -350,16 +378,14 @@ namespace DbViewer
             _currentStartDate = "";
             _currentEndDate = "";
             _currentPage = 1;
+            _activeRowsCacheKey = "all";
 
             _totalCount = await Task.Run(() => _repository.CountAllLogs());
             _totalPages = CalculateTotalPages(_totalCount);
 
             TotalLogCountText.Text = _totalCount.ToString("N0");
 
-            /*
-             * 전체 조회 기준으로 카테고리 숫자를 다시 계산한다.
-             * startDate/endDate를 넘기지 않으면 전체 DB 기준이다.
-             */
+            SaveBaseQueryState();
             StartBackgroundCategoryCache();
 
             await LoadCurrentPageAsync(showLoading: false);
@@ -367,9 +393,19 @@ namespace DbViewer
 
         private async Task ToggleCategoryAsync(string category)
         {
+            if (ShouldIgnoreCategoryClick())
+            {
+                return;
+            }
+
             if (_repository == null)
             {
                 return;
+            }
+
+            if (_currentMode != "category")
+            {
+                SaveBaseQueryState();
             }
 
             if (_selectedCategories.Contains(category))
@@ -385,14 +421,11 @@ namespace DbViewer
 
             if (_selectedCategories.Count == 0)
             {
-                await LoadAllFirstPageAsync();
+                await RestoreBaseQueryAfterCategoryClearAsync();
                 return;
             }
 
             _currentMode = "category";
-            _currentKeyword = "";
-            _currentStartDate = "";
-            _currentEndDate = "";
             _currentPage = 1;
 
             await LoadCategoryPageFromCacheAsync();
@@ -520,29 +553,30 @@ namespace DbViewer
             _selectedCategories.Clear();
             UpdateCategoryCardActiveStates();
 
-            _currentMode = "date";
+            _currentMode = "date_cache";
             _currentStartDate = startDate;
             _currentEndDate = endDate;
             _currentKeyword = "";
             _currentPage = 1;
+            _activeRowsCacheKey = MakePeriodCacheKey(startDate, endDate);
 
-            _totalCount = await Task.Run(() =>
-                _repository.CountDateLogs(_currentStartDate, _currentEndDate)
-            );
+            SetLoadingState("선택한 기간의 이력 내용을 준비하는 중입니다...");
 
+            List<LogRow>? cachedRows = await GetOrBuildRowsCacheAsync(startDate, endDate);
+
+            if (cachedRows == null)
+            {
+                return;
+            }
+
+            _totalCount = cachedRows.Count;
             _totalPages = CalculateTotalPages(_totalCount);
 
-            /*
-             * 기간 조회 기준 전체 로그 숫자를 갱신한다.
-             */
             TotalLogCountText.Text = _totalCount.ToString("N0");
 
-            /*
-             * 선택한 기간 기준으로 화재/제경보/중계기 고장 등 숫자를 다시 계산한다.
-             */
-            StartBackgroundCategoryCache(_currentStartDate, _currentEndDate);
+            SaveBaseQueryState();
 
-            await LoadCurrentPageAsync();
+            await LoadCurrentPageAsync(showLoading: false);
         }
 
         private async Task ApplyRecentDaysAsync(int days)
@@ -702,7 +736,7 @@ namespace DbViewer
             DateCalendarDropdown.Visibility = Visibility.Visible;
         }
 
-        private void ApplySelectedDateFromCalendar()
+        private async void ApplySelectedDateFromCalendar()
         {
             if (_suppressDateCalendarChange)
             {
@@ -722,6 +756,11 @@ namespace DbViewer
             string selectedDate = DateCalendar.SelectedDate.Value.ToString("yyyy-MM-dd");
 
             _dateTargetText.Text = selectedDate;
+
+            /*
+             * 날짜 선택 후 캘린더가 닫히면서 아래 카테고리 카드가 같이 클릭되는 문제를 막는다.
+             */
+            BlockCategoryClickBriefly();
 
             DateCalendarDropdown.Visibility = Visibility.Collapsed;
 
@@ -747,6 +786,18 @@ namespace DbViewer
 
             _dateTargetButton = null;
             _dateTargetText = null;
+
+            /*
+             * 핵심:
+             * 7일/30일 버튼처럼 날짜가 바뀐 직후 바로 기간 조회를 실행한다.
+             * 그래서 전체 로그 / 화재 / 제경보 / 중계기 고장 숫자가 선택 기간 기준으로 즉시 바뀐다.
+             */
+            if (_repository != null &&
+                IsValidDate(StartDateText.Text) &&
+                IsValidDate(EndDateText.Text))
+            {
+                await LoadDateFirstPageAsync();
+            }
         }
 
         private void ApplyDbDateRange(string startDate, string endDate)
@@ -787,6 +838,16 @@ namespace DbViewer
             DateCalendarDropdown.Visibility = Visibility.Collapsed;
             _dateTargetButton = null;
             _dateTargetText = null;
+        }
+
+        private void BlockCategoryClickBriefly()
+        {
+            _ignoreCategoryClickUntil = DateTime.Now.AddMilliseconds(350);
+        }
+
+        private bool ShouldIgnoreCategoryClick()
+        {
+            return DateTime.Now <= _ignoreCategoryClickUntil;
         }
 
         private void CloseDropdownsWhenOutsideClicked(DependencyObject? source)
@@ -853,6 +914,16 @@ namespace DbViewer
 
                     rows = await Task.Run(() =>
                         _repository.SearchLogsPage(keyword, page, pageSize), token
+                    );
+                }
+                else if (_currentMode == "date_cache")
+                {
+                    string cacheKey = _activeRowsCacheKey;
+                    int page = _currentPage;
+                    int pageSize = _pageSize;
+
+                    rows = await Task.Run(() =>
+                        GetRowsPageFromCache(cacheKey, page, pageSize), token
                     );
                 }
                 else if (_currentMode == "date")
@@ -1072,7 +1143,10 @@ namespace DbViewer
             {
                 for (int start = 0; start < rows.Count; start += batchSize)
                 {
-                    token.ThrowIfCancellationRequested();
+                    if (token.IsCancellationRequested)
+                    {
+                        return;
+                    }
 
                     int end = Math.Min(start + batchSize, rows.Count);
 
@@ -1118,22 +1192,24 @@ namespace DbViewer
                 return;
             }
 
+            string cacheKey = MakePeriodCacheKey(startDate, endDate);
+
+            if (TryApplyCategoryCache(cacheKey))
+            {
+                return;
+            }
+
             _countCts?.Cancel();
             _countCts = new CancellationTokenSource();
 
             CancellationToken token = _countCts.Token;
             LogRepository repository = _repository;
+            int jobId = Interlocked.Increment(ref _countJobVersion);
 
             _categoryCacheReady = false;
             _categoryCacheBuilding = true;
 
-            lock (_categoryCacheLock)
-            {
-                foreach (string key in _categoryCache.Keys.ToList())
-                {
-                    _categoryCache[key].Clear();
-                }
-            }
+            ClearCurrentCategoryCache();
 
             FireCountText.Text = "...";
             AlarmCountText.Text = "...";
@@ -1154,25 +1230,19 @@ namespace DbViewer
 
             Task.Run(() =>
             {
-                int processed = 0;
+                Dictionary<string, int> liveCounts = CreateEmptyCountMap();
+                Dictionary<string, List<LogRow>> builtCategoryCache = CreateEmptyCategoryCache();
+                Stopwatch uiUpdateWatch = Stopwatch.StartNew();
 
-                Dictionary<string, int> liveCounts = new()
-                {
-                    ["fire"] = 0,
-                    ["alarm"] = 0,
-                    ["relay_fault"] = 0,
-                    ["an_fault"] = 0,
-                    ["line_fault"] = 0,
-                    ["output"] = 0,
-                    ["mcc"] = 0,
-                    ["other"] = 0
-                };
+                int processed = 0;
+                bool wasCanceled = false;
 
                 foreach (LogRow row in repository.StreamAllLogs())
                 {
-                    if (token.IsCancellationRequested)
+                    if (token.IsCancellationRequested || jobId != _countJobVersion)
                     {
-                        return;
+                        wasCanceled = true;
+                        break;
                     }
 
                     if (!IsRowInDateRange(row, filterStart, filterEnd))
@@ -1183,21 +1253,15 @@ namespace DbViewer
                     string rowTag = LogClassifier.ClassifyRowTag(row, processed);
                     List<string> categories = LogClassifier.GetCategoryKeys(row, rowTag);
 
-                    lock (_categoryCacheLock)
-                    {
-                        foreach (string category in categories)
-                        {
-                            if (!_categoryCache.ContainsKey(category))
-                            {
-                                continue;
-                            }
-
-                            _categoryCache[category].Add(row);
-                        }
-                    }
-
                     foreach (string category in categories)
                     {
+                        if (!builtCategoryCache.ContainsKey(category))
+                        {
+                            continue;
+                        }
+
+                        builtCategoryCache[category].Add(row);
+
                         if (liveCounts.ContainsKey(category))
                         {
                             liveCounts[category]++;
@@ -1206,40 +1270,51 @@ namespace DbViewer
 
                     processed++;
 
-                    if (processed % 1000 == 0)
+                    if (processed % 1000 == 0 && uiUpdateWatch.ElapsedMilliseconds >= 120)
                     {
                         Dictionary<string, int> snapshot = new(liveCounts);
+                        uiUpdateWatch.Restart();
 
                         Dispatcher.BeginInvoke(new Action(() =>
                         {
-                            if (token.IsCancellationRequested)
+                            if (token.IsCancellationRequested || jobId != _countJobVersion)
                             {
                                 return;
                             }
 
                             UpdateCategoryCountText(snapshot);
-                        }));
+                        }), DispatcherPriority.Background);
                     }
+                }
+
+                if (wasCanceled || token.IsCancellationRequested || jobId != _countJobVersion)
+                {
+                    return;
+                }
+
+                Dictionary<string, List<LogRow>> finalSnapshot = CloneCategoryCache(builtCategoryCache);
+
+                lock (_queryCacheLock)
+                {
+                    _categoryCacheByKey[cacheKey] = finalSnapshot;
+                    _totalCountCacheByKey[cacheKey] = processed;
                 }
 
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
-                    if (token.IsCancellationRequested)
+                    if (token.IsCancellationRequested || jobId != _countJobVersion)
                     {
                         return;
                     }
 
-                    _categoryCacheReady = true;
-                    _categoryCacheBuilding = false;
-
-                    UpdateCategoryCountTextFromCache();
+                    ApplyCategoryCacheSnapshot(finalSnapshot);
 
                     if (_currentMode == "category" && _selectedCategories.Count > 0)
                     {
                         _ = LoadCategoryPageFromCacheAsync();
                     }
-                }));
-            }, token);
+                }), DispatcherPriority.Background);
+            });
         }
 
         private void UpdateCategoryCountTextFromCache()
@@ -1292,6 +1367,334 @@ namespace DbViewer
                 : "0";
         }
 
+        private async Task<List<LogRow>?> GetOrBuildRowsCacheAsync(string startDate, string endDate)
+        {
+            if (_repository == null)
+            {
+                return new List<LogRow>();
+            }
+
+            string cacheKey = MakePeriodCacheKey(startDate, endDate);
+
+            lock (_queryCacheLock)
+            {
+                if (_rowsCacheByKey.TryGetValue(cacheKey, out List<LogRow>? cachedRows))
+                {
+                    if (_categoryCacheByKey.TryGetValue(cacheKey, out Dictionary<string, List<LogRow>>? cachedCategoryCache))
+                    {
+                        ApplyCategoryCacheSnapshot(cachedCategoryCache);
+                    }
+
+                    _totalCountCacheByKey[cacheKey] = cachedRows.Count;
+                    return cachedRows;
+                }
+            }
+
+            _countCts?.Cancel();
+            _countCts = new CancellationTokenSource();
+
+            CancellationToken token = _countCts.Token;
+            int jobId = Interlocked.Increment(ref _countJobVersion);
+
+            DateTime filterStart = DateTime.Parse(startDate).Date;
+            DateTime filterEnd = DateTime.Parse(endDate).Date.AddDays(1).AddTicks(-1);
+
+            FireCountText.Text = "...";
+            AlarmCountText.Text = "...";
+            RelayErrorCountText.Text = "...";
+            AnErrorCountText.Text = "...";
+            LineBreakCountText.Text = "...";
+            OutputCountText.Text = "...";
+            MccCountText.Text = "...";
+            EtcCountText.Text = "...";
+
+            LogRepository repository = _repository;
+
+            QueryCacheEntry? builtEntry = await Task.Run(() =>
+            {
+                List<LogRow> rows = new();
+                Dictionary<string, List<LogRow>> categoryCache = CreateEmptyCategoryCache();
+                Dictionary<string, int> liveCounts = CreateEmptyCountMap();
+                Stopwatch uiUpdateWatch = Stopwatch.StartNew();
+
+                bool wasCanceled = false;
+
+                foreach (LogRow row in repository.StreamAllLogs())
+                {
+                    if (token.IsCancellationRequested || jobId != _countJobVersion)
+                    {
+                        wasCanceled = true;
+                        break;
+                    }
+
+                    if (!IsRowInDateRange(row, filterStart, filterEnd))
+                    {
+                        continue;
+                    }
+
+                    int filteredIndex = rows.Count;
+                    string rowTag = LogClassifier.ClassifyRowTag(row, filteredIndex);
+                    List<string> categories = LogClassifier.GetCategoryKeys(row, rowTag);
+
+                    rows.Add(row);
+
+                    foreach (string category in categories)
+                    {
+                        if (!categoryCache.ContainsKey(category))
+                        {
+                            continue;
+                        }
+
+                        categoryCache[category].Add(row);
+
+                        if (liveCounts.ContainsKey(category))
+                        {
+                            liveCounts[category]++;
+                        }
+                    }
+
+                    if (rows.Count % 1000 == 0 && uiUpdateWatch.ElapsedMilliseconds >= 120)
+                    {
+                        Dictionary<string, int> snapshot = new(liveCounts);
+                        uiUpdateWatch.Restart();
+
+                        Dispatcher.BeginInvoke(new Action(() =>
+                        {
+                            if (token.IsCancellationRequested || jobId != _countJobVersion)
+                            {
+                                return;
+                            }
+
+                            UpdateCategoryCountText(snapshot);
+                        }), DispatcherPriority.Background);
+                    }
+                }
+
+                if (wasCanceled || token.IsCancellationRequested || jobId != _countJobVersion)
+                {
+                    return null;
+                }
+
+                return new QueryCacheEntry
+                {
+                    Rows = rows,
+                    CategoryCache = CloneCategoryCache(categoryCache)
+                };
+            });
+
+            if (builtEntry == null || token.IsCancellationRequested || jobId != _countJobVersion)
+            {
+                return null;
+            }
+
+            lock (_queryCacheLock)
+            {
+                _rowsCacheByKey[cacheKey] = builtEntry.Rows;
+                _categoryCacheByKey[cacheKey] = builtEntry.CategoryCache;
+                _totalCountCacheByKey[cacheKey] = builtEntry.TotalCount;
+            }
+
+            ApplyCategoryCacheSnapshot(builtEntry.CategoryCache);
+
+            return builtEntry.Rows;
+        }
+
+        private List<LogRow> GetRowsPageFromCache(string cacheKey, int page, int pageSize)
+        {
+            lock (_queryCacheLock)
+            {
+                if (!_rowsCacheByKey.TryGetValue(cacheKey, out List<LogRow>? rows))
+                {
+                    return new List<LogRow>();
+                }
+
+                int safePage = Math.Max(1, page);
+                int safePageSize = Math.Max(1, pageSize);
+
+                return rows
+                    .Skip((safePage - 1) * safePageSize)
+                    .Take(safePageSize)
+                    .ToList();
+            }
+        }
+
+        private static string MakePeriodCacheKey(string startDate, string endDate)
+        {
+            if (string.IsNullOrWhiteSpace(startDate) || string.IsNullOrWhiteSpace(endDate))
+            {
+                return "all";
+            }
+
+            return $"date:{startDate.Trim()}~{endDate.Trim()}";
+        }
+
+        private bool TryApplyCategoryCache(string cacheKey)
+        {
+            lock (_queryCacheLock)
+            {
+                if (!_categoryCacheByKey.TryGetValue(cacheKey, out Dictionary<string, List<LogRow>>? cachedCategoryCache))
+                {
+                    return false;
+                }
+
+                ApplyCategoryCacheSnapshot(cachedCategoryCache);
+                return true;
+            }
+        }
+
+        private void ApplyCategoryCacheSnapshot(Dictionary<string, List<LogRow>> snapshot)
+        {
+            lock (_categoryCacheLock)
+            {
+                foreach (string key in _categoryCache.Keys.ToList())
+                {
+                    _categoryCache[key].Clear();
+                }
+
+                foreach (KeyValuePair<string, List<LogRow>> pair in snapshot)
+                {
+                    if (!_categoryCache.ContainsKey(pair.Key))
+                    {
+                        continue;
+                    }
+
+                    _categoryCache[pair.Key].AddRange(pair.Value);
+                }
+            }
+
+            _categoryCacheReady = true;
+            _categoryCacheBuilding = false;
+
+            UpdateCategoryCountTextFromCache();
+        }
+
+        private void ClearCurrentCategoryCache()
+        {
+            lock (_categoryCacheLock)
+            {
+                foreach (string key in _categoryCache.Keys.ToList())
+                {
+                    _categoryCache[key].Clear();
+                }
+            }
+        }
+
+        private void ClearQueryCaches()
+        {
+            lock (_queryCacheLock)
+            {
+                _rowsCacheByKey.Clear();
+                _categoryCacheByKey.Clear();
+                _totalCountCacheByKey.Clear();
+            }
+
+            _activeRowsCacheKey = "all";
+            _baseModeBeforeCategory = "all";
+            _baseCacheKeyBeforeCategory = "all";
+            _baseKeywordBeforeCategory = "";
+            _baseStartDateBeforeCategory = "";
+            _baseEndDateBeforeCategory = "";
+        }
+
+        private static Dictionary<string, int> CreateEmptyCountMap()
+        {
+            return new Dictionary<string, int>
+            {
+                ["fire"] = 0,
+                ["alarm"] = 0,
+                ["relay_fault"] = 0,
+                ["an_fault"] = 0,
+                ["line_fault"] = 0,
+                ["output"] = 0,
+                ["mcc"] = 0,
+                ["other"] = 0
+            };
+        }
+
+        private static Dictionary<string, List<LogRow>> CreateEmptyCategoryCache()
+        {
+            return new Dictionary<string, List<LogRow>>
+            {
+                ["fire"] = new List<LogRow>(),
+                ["alarm"] = new List<LogRow>(),
+                ["relay_fault"] = new List<LogRow>(),
+                ["an_fault"] = new List<LogRow>(),
+                ["line_fault"] = new List<LogRow>(),
+                ["output"] = new List<LogRow>(),
+                ["mcc"] = new List<LogRow>(),
+                ["other"] = new List<LogRow>()
+            };
+        }
+
+        private static Dictionary<string, List<LogRow>> CloneCategoryCache(Dictionary<string, List<LogRow>> source)
+        {
+            Dictionary<string, List<LogRow>> clone = CreateEmptyCategoryCache();
+
+            foreach (KeyValuePair<string, List<LogRow>> pair in source)
+            {
+                if (!clone.ContainsKey(pair.Key))
+                {
+                    continue;
+                }
+
+                clone[pair.Key].AddRange(pair.Value);
+            }
+
+            return clone;
+        }
+
+        private void SaveBaseQueryState()
+        {
+            _baseModeBeforeCategory = _currentMode;
+            _baseCacheKeyBeforeCategory = _activeRowsCacheKey;
+            _baseKeywordBeforeCategory = _currentKeyword;
+            _baseStartDateBeforeCategory = _currentStartDate;
+            _baseEndDateBeforeCategory = _currentEndDate;
+        }
+
+        private async Task RestoreBaseQueryAfterCategoryClearAsync()
+        {
+            _currentMode = _baseModeBeforeCategory;
+            _activeRowsCacheKey = _baseCacheKeyBeforeCategory;
+            _currentKeyword = _baseKeywordBeforeCategory;
+            _currentStartDate = _baseStartDateBeforeCategory;
+            _currentEndDate = _baseEndDateBeforeCategory;
+            _currentPage = 1;
+
+            if (_currentMode == "date_cache")
+            {
+                List<LogRow> rows;
+
+                lock (_queryCacheLock)
+                {
+                    rows = _rowsCacheByKey.TryGetValue(_activeRowsCacheKey, out List<LogRow>? cachedRows)
+                        ? cachedRows
+                        : new List<LogRow>();
+
+                    if (_categoryCacheByKey.TryGetValue(_activeRowsCacheKey, out Dictionary<string, List<LogRow>>? categoryCache))
+                    {
+                        ApplyCategoryCacheSnapshot(categoryCache);
+                    }
+                }
+
+                _totalCount = rows.Count;
+                _totalPages = CalculateTotalPages(_totalCount);
+                TotalLogCountText.Text = _totalCount.ToString("N0");
+
+                await LoadCurrentPageAsync(showLoading: false);
+                return;
+            }
+
+            if (_currentMode == "search")
+            {
+                await LoadCurrentPageAsync(showLoading: false);
+                return;
+            }
+
+            await LoadAllFirstPageAsync();
+        }
+
+
         private void ResetCategoryCountText()
         {
             TotalLogCountText.Text = "0";
@@ -1304,13 +1707,7 @@ namespace DbViewer
             MccCountText.Text = "0";
             EtcCountText.Text = "0";
 
-            lock (_categoryCacheLock)
-            {
-                foreach (string key in _categoryCache.Keys.ToList())
-                {
-                    _categoryCache[key].Clear();
-                }
-            }
+            ClearCurrentCategoryCache();
 
             _categoryCacheReady = false;
             _categoryCacheBuilding = false;
@@ -1623,6 +2020,19 @@ namespace DbViewer
 
         private void UpdateCategoryCardActiveStates()
         {
+            /*
+             * 전체 로그 카드 active 기준:
+             * - DB가 선택되어 있어야 한다.
+             * - 화재/제경보/고장/MCC 같은 카테고리가 선택되지 않은 상태여야 한다.
+             * 이력 보기 직후: 전체 로그 active
+             * 7일/30일/기간 조회 직후: 전체 로그 active
+             * 화재 클릭: 전체 로그 inactive, 화재 active
+             * 카테고리 모두 해제: 전체 로그 active 복귀
+             */
+            bool totalLogActive = _repository != null && _selectedCategories.Count == 0;
+
+            SetCardActive(TotalLogButton, totalLogActive);
+
             SetCardActive(FireLogButton, _selectedCategories.Contains("fire"));
             SetCardActive(AlarmLogButton, _selectedCategories.Contains("alarm"));
             SetCardActive(RelayErrorLogButton, _selectedCategories.Contains("relay_fault"));
