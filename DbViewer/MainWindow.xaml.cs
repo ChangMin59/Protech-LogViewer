@@ -3,6 +3,7 @@ using DbViewer.Services;
 using Microsoft.Win32;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -10,6 +11,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
 
 namespace DbViewer
 {
@@ -52,6 +54,12 @@ namespace DbViewer
         private bool _categoryCacheReady = false;
         private bool _categoryCacheBuilding = false;
 
+        private TextBlock? _dateTargetText;
+        private Border? _dateTargetButton;
+        private DateTime? _dbStartDate;
+        private DateTime? _dbEndDate;
+        private bool _suppressDateCalendarChange = false;
+
         public MainWindow()
         {
             InitializeComponent();
@@ -79,9 +87,38 @@ namespace DbViewer
             ResetButton.MouseLeftButtonUp += async (_, _) => await ResetAsync();
 
             PeriodSearchButton.MouseLeftButtonUp += async (_, _) => await LoadDateFirstPageAsync();
-            AllPeriodButton.MouseLeftButtonUp += async (_, _) => await LoadAllFirstPageAsync();
+            AllPeriodButton.MouseLeftButtonUp += async (_, _) => await ApplyAllPeriodAsync();
             SevenDaysButton.MouseLeftButtonUp += async (_, _) => await ApplyRecentDaysAsync(7);
             ThirtyDaysButton.MouseLeftButtonUp += async (_, _) => await ApplyRecentDaysAsync(30);
+
+            StartDateButton.MouseLeftButtonUp += (_, e) =>
+            {
+                e.Handled = true;
+                OpenDateCalendar(StartDateButton, StartDateText);
+            };
+
+            EndDateButton.MouseLeftButtonUp += (_, e) =>
+            {
+                e.Handled = true;
+                OpenDateCalendar(EndDateButton, EndDateText);
+            };
+
+            StartDateButton.TouchDown += (_, e) =>
+            {
+                e.Handled = true;
+                OpenDateCalendar(StartDateButton, StartDateText);
+            };
+
+            EndDateButton.TouchDown += (_, e) =>
+            {
+                e.Handled = true;
+                OpenDateCalendar(EndDateButton, EndDateText);
+            };
+
+            DateCalendar.SelectedDatesChanged += (_, _) =>
+            {
+                ApplySelectedDateFromCalendar();
+            };
 
             PageSizeButton.MouseLeftButtonUp += (_, e) =>
             {
@@ -157,38 +194,16 @@ namespace DbViewer
 
             PreviewMouseLeftButtonDown += (_, e) =>
             {
-                if (PageSizeDropdown.Visibility != Visibility.Visible)
-                {
-                    return;
-                }
-
                 DependencyObject? source = e.OriginalSource as DependencyObject;
 
-                if (IsDescendantOf(source, PageSizeButton) ||
-                    IsDescendantOf(source, PageSizeDropdown))
-                {
-                    return;
-                }
-
-                PageSizeDropdown.Visibility = Visibility.Collapsed;
+                CloseDropdownsWhenOutsideClicked(source);
             };
 
             TouchDown += (_, e) =>
             {
-                if (PageSizeDropdown.Visibility != Visibility.Visible)
-                {
-                    return;
-                }
-
                 DependencyObject? source = e.OriginalSource as DependencyObject;
 
-                if (IsDescendantOf(source, PageSizeButton) ||
-                    IsDescendantOf(source, PageSizeDropdown))
-                {
-                    return;
-                }
-
-                PageSizeDropdown.Visibility = Visibility.Collapsed;
+                CloseDropdownsWhenOutsideClicked(source);
             };
 
             SearchKeywordTextBox.KeyDown += async (_, e) =>
@@ -206,6 +221,12 @@ namespace DbViewer
 
             StartDateText.Text = "";
             EndDateText.Text = "";
+
+            _dbStartDate = null;
+            _dbEndDate = null;
+            UpdateDateArrowVisibility();
+
+            DateCalendarDropdown.Visibility = Visibility.Collapsed;
 
             PageSizeText.Text = $"{_pageSize:N0}건";
 
@@ -264,6 +285,9 @@ namespace DbViewer
                 StartDateText.Text = result.startDate;
                 EndDateText.Text = result.endDate;
 
+                ApplyDbDateRange(result.startDate, result.endDate);
+                UpdateDateArrowVisibility();
+
                 _currentMode = "all";
                 _currentKeyword = "";
                 _currentStartDate = "";
@@ -272,9 +296,9 @@ namespace DbViewer
 
                 TotalLogCountText.Text = _totalCount.ToString("N0");
 
-                await LoadCurrentPageAsync(showLoading: false);
-
                 StartBackgroundCategoryCache();
+
+                await LoadCurrentPageAsync(showLoading: false);
             }
             catch (Exception ex)
             {
@@ -285,6 +309,13 @@ namespace DbViewer
                 UpdateCategoryCardActiveStates();
 
                 ResetCategoryCountText();
+
+                StartDateText.Text = "";
+                EndDateText.Text = "";
+                _dbStartDate = null;
+                _dbEndDate = null;
+                UpdateDateArrowVisibility();
+                DateCalendarDropdown.Visibility = Visibility.Collapsed;
 
                 LogRowsPanel.Children.Clear();
                 LogRowsPanel.Children.Add(CreateEmptyRow("이력 파일을 정상적으로 읽을 수 없습니다."));
@@ -324,6 +355,12 @@ namespace DbViewer
             _totalPages = CalculateTotalPages(_totalCount);
 
             TotalLogCountText.Text = _totalCount.ToString("N0");
+
+            /*
+             * 전체 조회 기준으로 카테고리 숫자를 다시 계산한다.
+             * startDate/endDate를 넘기지 않으면 전체 DB 기준이다.
+             */
+            StartBackgroundCategoryCache();
 
             await LoadCurrentPageAsync(showLoading: false);
         }
@@ -495,6 +532,16 @@ namespace DbViewer
 
             _totalPages = CalculateTotalPages(_totalCount);
 
+            /*
+             * 기간 조회 기준 전체 로그 숫자를 갱신한다.
+             */
+            TotalLogCountText.Text = _totalCount.ToString("N0");
+
+            /*
+             * 선택한 기간 기준으로 화재/제경보/중계기 고장 등 숫자를 다시 계산한다.
+             */
+            StartBackgroundCategoryCache(_currentStartDate, _currentEndDate);
+
             await LoadCurrentPageAsync();
         }
 
@@ -520,7 +567,33 @@ namespace DbViewer
             StartDateText.Text = start.ToString("yyyy-MM-dd");
             EndDateText.Text = end.ToString("yyyy-MM-dd");
 
+            UpdateDateArrowVisibility();
+
             await LoadDateFirstPageAsync();
+        }
+
+        private async Task ApplyAllPeriodAsync()
+        {
+            if (_repository == null)
+            {
+                return;
+            }
+
+            /*
+             * 전체 버튼은 현재 화면에 남아 있는 7일/30일 값을 쓰면 안 된다.
+             * DB 안의 실제 최초 로그 날짜와 마지막 로그 날짜로 다시 돌린다.
+             */
+            (string startDate, string endDate) range = await Task.Run(() =>
+                _repository.GetLogDateRange()
+            );
+
+            StartDateText.Text = range.startDate;
+            EndDateText.Text = range.endDate;
+
+            ApplyDbDateRange(range.startDate, range.endDate);
+            UpdateDateArrowVisibility();
+
+            await LoadAllFirstPageAsync();
         }
 
         private async Task ResetAsync()
@@ -532,6 +605,13 @@ namespace DbViewer
 
             if (_repository == null)
             {
+                StartDateText.Text = "";
+                EndDateText.Text = "";
+                _dbStartDate = null;
+                _dbEndDate = null;
+                UpdateDateArrowVisibility();
+                DateCalendarDropdown.Visibility = Visibility.Collapsed;
+
                 LogRowsPanel.Children.Clear();
                 LogRowsPanel.Children.Add(CreateEmptyRow("이력 파일을 선택하세요."));
                 return;
@@ -544,7 +624,195 @@ namespace DbViewer
             StartDateText.Text = range.startDate;
             EndDateText.Text = range.endDate;
 
+            ApplyDbDateRange(range.startDate, range.endDate);
+            UpdateDateArrowVisibility();
+
             await LoadAllFirstPageAsync();
+        }
+
+        private void OpenDateCalendar(Border targetButton, TextBlock targetText)
+        {
+            if (_repository == null)
+            {
+                return;
+            }
+
+            if (!_dbStartDate.HasValue || !_dbEndDate.HasValue)
+            {
+                return;
+            }
+
+            bool isOpen = DateCalendarDropdown.Visibility == Visibility.Visible;
+
+            if (isOpen && ReferenceEquals(_dateTargetButton, targetButton))
+            {
+                CloseDateCalendarDropdown();
+                return;
+            }
+
+            if (PageSizeDropdown.Visibility == Visibility.Visible)
+            {
+                PageSizeDropdown.Visibility = Visibility.Collapsed;
+            }
+
+            _dateTargetButton = targetButton;
+            _dateTargetText = targetText;
+
+            DateCalendar.DisplayDateStart = _dbStartDate;
+            DateCalendar.DisplayDateEnd = _dbEndDate;
+
+            _suppressDateCalendarChange = true;
+
+            if (IsValidDate(targetText.Text))
+            {
+                DateTime selectedDate = DateTime.Parse(targetText.Text);
+
+                DateCalendar.SelectedDate = selectedDate;
+                DateCalendar.DisplayDate = selectedDate;
+            }
+            else
+            {
+                DateCalendar.SelectedDate = _dbEndDate.Value;
+                DateCalendar.DisplayDate = _dbEndDate.Value;
+            }
+
+            _suppressDateCalendarChange = false;
+
+            Point point = targetButton.TranslatePoint(
+                new Point(0, targetButton.ActualHeight + 6),
+                RootGrid
+            );
+
+            double x = point.X;
+            double y = point.Y;
+
+            if (x + DateCalendarDropdown.Width > RootGrid.ActualWidth)
+            {
+                x = RootGrid.ActualWidth - DateCalendarDropdown.Width - 12;
+            }
+
+            if (y + DateCalendarDropdown.Height > RootGrid.ActualHeight)
+            {
+                y = point.Y - DateCalendarDropdown.Height - targetButton.ActualHeight - 12;
+            }
+
+            DateCalendarDropdownTransform.X = Math.Max(12, x);
+            DateCalendarDropdownTransform.Y = Math.Max(12, y);
+
+            DateCalendarDropdown.Visibility = Visibility.Visible;
+        }
+
+        private void ApplySelectedDateFromCalendar()
+        {
+            if (_suppressDateCalendarChange)
+            {
+                return;
+            }
+
+            if (_dateTargetText == null)
+            {
+                return;
+            }
+
+            if (!DateCalendar.SelectedDate.HasValue)
+            {
+                return;
+            }
+
+            string selectedDate = DateCalendar.SelectedDate.Value.ToString("yyyy-MM-dd");
+
+            _dateTargetText.Text = selectedDate;
+
+            DateCalendarDropdown.Visibility = Visibility.Collapsed;
+
+            if (IsValidDate(StartDateText.Text) && IsValidDate(EndDateText.Text))
+            {
+                DateTime start = DateTime.Parse(StartDateText.Text);
+                DateTime end = DateTime.Parse(EndDateText.Text);
+
+                if (start > end)
+                {
+                    if (ReferenceEquals(_dateTargetText, StartDateText))
+                    {
+                        EndDateText.Text = selectedDate;
+                    }
+                    else
+                    {
+                        StartDateText.Text = selectedDate;
+                    }
+                }
+            }
+
+            UpdateDateArrowVisibility();
+
+            _dateTargetButton = null;
+            _dateTargetText = null;
+        }
+
+        private void ApplyDbDateRange(string startDate, string endDate)
+        {
+            _dbStartDate = IsValidDate(startDate)
+                ? DateTime.Parse(startDate)
+                : null;
+
+            _dbEndDate = IsValidDate(endDate)
+                ? DateTime.Parse(endDate)
+                : null;
+
+            DateCalendar.DisplayDateStart = _dbStartDate;
+            DateCalendar.DisplayDateEnd = _dbEndDate;
+
+            if (_dbEndDate.HasValue)
+            {
+                DateCalendar.DisplayDate = _dbEndDate.Value;
+            }
+        }
+
+        private void UpdateDateArrowVisibility()
+        {
+            bool hasStartDate = IsValidDate(StartDateText.Text);
+            bool hasEndDate = IsValidDate(EndDateText.Text);
+
+            StartDateArrowText.Visibility = hasStartDate
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+
+            EndDateArrowText.Visibility = hasEndDate
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+        }
+
+        private void CloseDateCalendarDropdown()
+        {
+            DateCalendarDropdown.Visibility = Visibility.Collapsed;
+            _dateTargetButton = null;
+            _dateTargetText = null;
+        }
+
+        private void CloseDropdownsWhenOutsideClicked(DependencyObject? source)
+        {
+            if (PageSizeDropdown.Visibility == Visibility.Visible)
+            {
+                bool clickedPageSizeButton = IsDescendantOf(source, PageSizeButton);
+                bool clickedPageSizeDropdown = IsDescendantOf(source, PageSizeDropdown);
+
+                if (!clickedPageSizeButton && !clickedPageSizeDropdown)
+                {
+                    PageSizeDropdown.Visibility = Visibility.Collapsed;
+                }
+            }
+
+            if (DateCalendarDropdown.Visibility == Visibility.Visible)
+            {
+                bool clickedStartDate = IsDescendantOf(source, StartDateButton);
+                bool clickedEndDate = IsDescendantOf(source, EndDateButton);
+                bool clickedDateCalendar = IsDescendantOf(source, DateCalendarDropdown);
+
+                if (!clickedStartDate && !clickedEndDate && !clickedDateCalendar)
+                {
+                    CloseDateCalendarDropdown();
+                }
+            }
         }
 
         private async Task LoadCurrentPageAsync(bool showLoading = true)
@@ -693,6 +961,11 @@ namespace DbViewer
 
         private void TogglePageSizeDropdown()
         {
+            if (DateCalendarDropdown.Visibility == Visibility.Visible)
+            {
+                CloseDateCalendarDropdown();
+            }
+
             PageSizeDropdown.Visibility =
                 PageSizeDropdown.Visibility == Visibility.Visible
                     ? Visibility.Collapsed
@@ -765,7 +1038,35 @@ namespace DbViewer
                 return;
             }
 
-            const int batchSize = 50;
+            /*
+             * 핵심:
+             * 100,000건은 WPF UIElement를 100,000개 만드는 작업이다.
+             * batch가 20이어도 UI 스레드가 계속 바쁘면 카테고리 숫자 갱신이 밀린다.
+             *
+             * 그래서 표시 건수가 클수록 batch를 더 줄인다.
+             */
+            int batchSize;
+
+            if (rows.Count >= 100000)
+            {
+                batchSize = 5;
+            }
+            else if (rows.Count >= 50000)
+            {
+                batchSize = 8;
+            }
+            else if (rows.Count >= 10000)
+            {
+                batchSize = 12;
+            }
+            else if (rows.Count >= 5000)
+            {
+                batchSize = 20;
+            }
+            else
+            {
+                batchSize = 50;
+            }
 
             try
             {
@@ -780,7 +1081,29 @@ namespace DbViewer
                         LogRowsPanel.Children.Add(CreateLogRow(rows[i], i));
                     }
 
-                    await Task.Delay(1, token);
+                    /*
+                     * Background만 주면 렌더링 작업이 계속 이어질 수 있다.
+                     * ApplicationIdle까지 내려서 카운트 갱신, 클릭, 레이아웃 계산이 끼어들 시간을 준다.
+                     */
+                    await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+
+                    /*
+                     * 100,000건에서는 1ms도 부족하다.
+                     * 너무 빠르게 Add를 반복하면 카운트 갱신이 화면에 반영되기 전에
+                     * 다음 행 렌더링이 계속 들어간다.
+                     */
+                    if (rows.Count >= 100000)
+                    {
+                        await Task.Delay(8, token);
+                    }
+                    else if (rows.Count >= 50000)
+                    {
+                        await Task.Delay(5, token);
+                    }
+                    else
+                    {
+                        await Task.Delay(1, token);
+                    }
                 }
             }
             catch (OperationCanceledException)
@@ -788,7 +1111,7 @@ namespace DbViewer
             }
         }
 
-        private void StartBackgroundCategoryCache()
+        private void StartBackgroundCategoryCache(string startDate = "", string endDate = "")
         {
             if (_repository == null)
             {
@@ -821,15 +1144,40 @@ namespace DbViewer
             MccCountText.Text = "...";
             EtcCountText.Text = "...";
 
+            DateTime? filterStart = IsValidDate(startDate)
+                ? DateTime.Parse(startDate).Date
+                : null;
+
+            DateTime? filterEnd = IsValidDate(endDate)
+                ? DateTime.Parse(endDate).Date.AddDays(1).AddTicks(-1)
+                : null;
+
             Task.Run(() =>
             {
                 int processed = 0;
+
+                Dictionary<string, int> liveCounts = new()
+                {
+                    ["fire"] = 0,
+                    ["alarm"] = 0,
+                    ["relay_fault"] = 0,
+                    ["an_fault"] = 0,
+                    ["line_fault"] = 0,
+                    ["output"] = 0,
+                    ["mcc"] = 0,
+                    ["other"] = 0
+                };
 
                 foreach (LogRow row in repository.StreamAllLogs())
                 {
                     if (token.IsCancellationRequested)
                     {
                         return;
+                    }
+
+                    if (!IsRowInDateRange(row, filterStart, filterEnd))
+                    {
+                        continue;
                     }
 
                     string rowTag = LogClassifier.ClassifyRowTag(row, processed);
@@ -848,24 +1196,39 @@ namespace DbViewer
                         }
                     }
 
+                    foreach (string category in categories)
+                    {
+                        if (liveCounts.ContainsKey(category))
+                        {
+                            liveCounts[category]++;
+                        }
+                    }
+
                     processed++;
 
-                    if (processed % 5000 == 0)
+                    if (processed % 1000 == 0)
                     {
-                        Dispatcher.Invoke(() =>
-                        {
-                            UpdateCategoryCountTextFromCache();
+                        Dictionary<string, int> snapshot = new(liveCounts);
 
-                            if (_currentMode == "category" && _selectedCategories.Count > 0)
+                        Dispatcher.BeginInvoke(new Action(() =>
+                        {
+                            if (token.IsCancellationRequested)
                             {
-                                _ = LoadCategoryPageFromCacheAsync();
+                                return;
                             }
-                        });
+
+                            UpdateCategoryCountText(snapshot);
+                        }));
                     }
                 }
 
-                Dispatcher.Invoke(() =>
+                Dispatcher.BeginInvoke(new Action(() =>
                 {
+                    if (token.IsCancellationRequested)
+                    {
+                        return;
+                    }
+
                     _categoryCacheReady = true;
                     _categoryCacheBuilding = false;
 
@@ -875,7 +1238,7 @@ namespace DbViewer
                     {
                         _ = LoadCategoryPageFromCacheAsync();
                     }
-                });
+                }));
             }, token);
         }
 
@@ -892,6 +1255,41 @@ namespace DbViewer
                 MccCountText.Text = _categoryCache["mcc"].Count.ToString("N0");
                 EtcCountText.Text = _categoryCache["other"].Count.ToString("N0");
             }
+        }
+
+        private void UpdateCategoryCountText(Dictionary<string, int> counts)
+        {
+            FireCountText.Text = counts.TryGetValue("fire", out int fire)
+                ? fire.ToString("N0")
+                : "0";
+
+            AlarmCountText.Text = counts.TryGetValue("alarm", out int alarm)
+                ? alarm.ToString("N0")
+                : "0";
+
+            RelayErrorCountText.Text = counts.TryGetValue("relay_fault", out int relayFault)
+                ? relayFault.ToString("N0")
+                : "0";
+
+            AnErrorCountText.Text = counts.TryGetValue("an_fault", out int anFault)
+                ? anFault.ToString("N0")
+                : "0";
+
+            LineBreakCountText.Text = counts.TryGetValue("line_fault", out int lineFault)
+                ? lineFault.ToString("N0")
+                : "0";
+
+            OutputCountText.Text = counts.TryGetValue("output", out int output)
+                ? output.ToString("N0")
+                : "0";
+
+            MccCountText.Text = counts.TryGetValue("mcc", out int mcc)
+                ? mcc.ToString("N0")
+                : "0";
+
+            EtcCountText.Text = counts.TryGetValue("other", out int other)
+                ? other.ToString("N0")
+                : "0";
         }
 
         private void ResetCategoryCountText()
@@ -1261,6 +1659,34 @@ namespace DbViewer
             return DateTime.TryParse(value, out _);
         }
 
+        private static bool IsRowInDateRange(
+            LogRow row,
+            DateTime? filterStart,
+            DateTime? filterEnd)
+        {
+            if (!filterStart.HasValue && !filterEnd.HasValue)
+            {
+                return true;
+            }
+
+            if (!DateTime.TryParse(row.DTime, out DateTime rowDateTime))
+            {
+                return false;
+            }
+
+            if (filterStart.HasValue && rowDateTime < filterStart.Value)
+            {
+                return false;
+            }
+
+            if (filterEnd.HasValue && rowDateTime > filterEnd.Value)
+            {
+                return false;
+            }
+
+            return true;
+        }
+
         private static DateTime ParseSortableDate(string value)
         {
             if (DateTime.TryParse(value, out DateTime result))
@@ -1297,6 +1723,11 @@ namespace DbViewer
             if (PageSizeDropdown != null)
             {
                 PageSizeDropdown.Visibility = Visibility.Collapsed;
+            }
+
+            if (DateCalendarDropdown != null)
+            {
+                DateCalendarDropdown.Visibility = Visibility.Collapsed;
             }
         }
 

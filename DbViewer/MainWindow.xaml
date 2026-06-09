@@ -136,7 +136,7 @@
 
     </Window.Resources>
 
-    <Grid>
+    <Grid x:Name="RootGrid">
 
         <Image Source="/Assets/Images/Background.png"
                Stretch="UniformToFill"
@@ -371,11 +371,30 @@
                                     Padding="14,9"
                                     Margin="0,0,18,0"
                                     Cursor="Hand">
-                                <TextBlock x:Name="StartDateText"
-                                           Text=""
-                                           FontSize="16"
-                                           Foreground="#263A5E"
-                                           VerticalAlignment="Center"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <TextBlock x:Name="StartDateText"
+                                               Grid.Column="0"
+                                               Text=""
+                                               FontSize="16"
+                                               Foreground="#263A5E"
+                                               VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis"/>
+
+                                    <TextBlock x:Name="StartDateArrowText"
+                                               Grid.Column="1"
+                                               Text="▼"
+                                               FontSize="13"
+                                               FontWeight="Bold"
+                                               Foreground="#5D6F8A"
+                                               VerticalAlignment="Center"
+                                               Margin="10,1,0,0"
+                                               Visibility="Collapsed"/>
+                                </Grid>
                             </Border>
 
                             <TextBlock Grid.Row="0"
@@ -395,11 +414,30 @@
                                     Padding="14,9"
                                     Margin="0,0,10,0"
                                     Cursor="Hand">
-                                <TextBlock x:Name="EndDateText"
-                                           Text=""
-                                           FontSize="16"
-                                           Foreground="#263A5E"
-                                           VerticalAlignment="Center"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <TextBlock x:Name="EndDateText"
+                                               Grid.Column="0"
+                                               Text=""
+                                               FontSize="16"
+                                               Foreground="#263A5E"
+                                               VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis"/>
+
+                                    <TextBlock x:Name="EndDateArrowText"
+                                               Grid.Column="1"
+                                               Text="▼"
+                                               FontSize="13"
+                                               FontWeight="Bold"
+                                               Foreground="#5D6F8A"
+                                               VerticalAlignment="Center"
+                                               Margin="10,1,0,0"
+                                               Visibility="Collapsed"/>
+                                </Grid>
                             </Border>
 
                             <Border Grid.Row="0"
@@ -753,7 +791,7 @@
                                                        Margin="0,0,6,0"
                                                        VerticalAlignment="Center"/>
 
-                                            <TextBlock Text="▼"
+                                            <TextBlock Text="▲"
                                                        FontSize="16"
                                                        FontWeight="Bold"
                                                        Foreground="#23395D"
@@ -804,6 +842,38 @@
                     <TextBlock Text="100,000건" FontSize="15" FontWeight="Bold" Foreground="#23395D" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                 </Border>
             </StackPanel>
+        </Border>
+
+        <Border x:Name="DateCalendarDropdown"
+                Width="360"
+                Height="320"
+                HorizontalAlignment="Left"
+                VerticalAlignment="Top"
+                Visibility="Collapsed"
+                Panel.ZIndex="1000"
+                Background="#FCFFFFFF"
+                BorderBrush="#D7E4F2"
+                BorderThickness="1"
+                CornerRadius="18"
+                ClipToBounds="True"
+                SnapsToDevicePixels="True"
+                Effect="{StaticResource RealGlassButtonShadow}">
+
+            <Border.RenderTransform>
+                <TranslateTransform x:Name="DateCalendarDropdownTransform"/>
+            </Border.RenderTransform>
+
+            <Viewbox Stretch="Fill">
+                <Calendar x:Name="DateCalendar"
+                          Width="205"
+                          Height="175"
+                          SelectionMode="SingleDate"
+                          FirstDayOfWeek="Sunday"
+                          FontSize="15"
+                          Background="#FCFFFFFF"
+                          BorderBrush="Transparent"
+                          BorderThickness="0"/>
+            </Viewbox>
         </Border>
     </Grid>
 </Window>
