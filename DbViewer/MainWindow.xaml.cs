@@ -1,6 +1,7 @@
 ﻿using DbViewer.Models;
 using DbViewer.Services;
 using Microsoft.Win32;
+using Microsoft.Data.Sqlite;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -14,6 +15,8 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using System.IO;
+using System.Text;
+using System.Text.RegularExpressions;
 
 namespace DbViewer
 {
@@ -113,6 +116,21 @@ namespace DbViewer
             public int PageNumber { get; init; }
             public int RowIndexInPage { get; init; }
         }
+        private sealed class DbOpenCheckResult
+        {
+            public bool Success { get; init; }
+            public int TotalCount { get; init; }
+            public string StartDate { get; init; } = "";
+            public string EndDate { get; init; } = "";
+            public string ErrorMessage { get; init; } = "";
+        }
+
+        private sealed class TxtConvertResult
+        {
+            public bool Success { get; init; }
+            public string DbPath { get; init; } = "";
+            public string ErrorMessage { get; init; } = "";
+        }
 
         public MainWindow()
         {
@@ -125,6 +143,18 @@ namespace DbViewer
         private void InitializeEvents()
         {
             HistoryViewButton.MouseLeftButtonUp += (_, _) => ShowHistoryOpenChoice();
+
+            HistoryRecoverButton.MouseLeftButtonUp += async (_, e) =>
+            {
+                e.Handled = true;
+                await RecoverHistoryFileAsync();
+            };
+
+            HistoryRecoverButton.TouchDown += async (_, e) =>
+            {
+                e.Handled = true;
+                await RecoverHistoryFileAsync();
+            };
 
             ManualHistoryFileButton.MouseLeftButtonUp += async (_, e) =>
             {
@@ -238,7 +268,18 @@ namespace DbViewer
             };
 
             SearchButton.MouseLeftButtonUp += async (_, _) => await SearchFirstPageAsync();
-            ResetButton.MouseLeftButtonUp += async (_, _) => await ResetAsync();
+
+            SearchClearButton.MouseLeftButtonUp += async (_, e) =>
+            {
+                e.Handled = true;
+                await ClearSearchKeywordAndReloadAllAsync();
+            };
+
+            SearchClearButton.TouchDown += async (_, e) =>
+            {
+                e.Handled = true;
+                await ClearSearchKeywordAndReloadAllAsync();
+            };
 
             PeriodSearchButton.MouseLeftButtonUp += async (_, _) => await LoadDateFirstPageAsync();
             AllPeriodButton.MouseLeftButtonUp += async (_, _) => await ApplyAllPeriodAsync();
@@ -375,6 +416,7 @@ namespace DbViewer
             LogScrollViewer.ScrollChanged += LogScrollViewer_ScrollChanged;
         }
 
+
         private void InitializeDefaultText()
         {
             ResetCategoryCountText();
@@ -421,8 +463,8 @@ namespace DbViewer
         {
             OpenFileDialog dialog = new()
             {
-                Title = "이력 DB 선택",
-                Filter = "SQLite DB (*.db)|*.db|모든 파일 (*.*)|*.*",
+                Title = "이력 파일 선택",
+                Filter = "이력 파일 (*.db;*.txt)|*.db;*.txt|SQLite DB (*.db)|*.db|텍스트 이력 (*.txt)|*.txt|모든 파일 (*.*)|*.*",
                 Multiselect = false
             };
 
@@ -432,6 +474,114 @@ namespace DbViewer
             }
 
             await OpenHistoryFileByPathAsync(dialog.FileName);
+        }
+        private async Task RecoverHistoryFileAsync()
+        {
+            string sourceDbPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.Windows),
+                "Log.db"
+            );
+
+            if (!File.Exists(sourceDbPath))
+            {
+                MessageBox.Show(
+                    $"Windows 폴더에서 복구할 Log.db 파일을 찾을 수 없습니다.\n\n" +
+                    $"확인 경로:\n{sourceDbPath}",
+                    "이력 DB 복구",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning
+                );
+
+                return;
+            }
+
+            try
+            {
+                CancelRunningJobs();
+                ClearMoveTargetHighlight();
+
+                _selectedCategories.Clear();
+                UpdateCategoryCardActiveStates();
+
+                SetLoadingState("Windows 폴더의 Log.db를 복구하는 중입니다...");
+
+                DbRecoveryResult result = await Task.Run(() =>
+                    DbRecovery.Recover(sourceDbPath)
+                );
+
+                if (!result.Success)
+                {
+                    FixedTimeRowsPanel.Children.Clear();
+                    LogRowsPanel.Children.Clear();
+
+                    FixedTimeRowsPanel.Children.Add(CreateFixedEmptyCell());
+                    LogRowsPanel.Children.Add(CreateEmptyRow("이력 DB 복구에 실패했습니다."));
+
+                    MessageBox.Show(
+                        $"이력 DB 복구에 실패했습니다.\n\n" +
+                        $"원본 DB:\n{result.SourceDbPath}\n\n" +
+                        $"복구 DB:\n{result.RecoveredDbPath}\n\n" +
+                        $"원본 Log 개수: {FormatRecoveryCount(result.OriginalLogCount)}\n" +
+                        $"복구 Log 개수: {FormatRecoveryCount(result.RecoveredLogCount)}\n" +
+                        $"무결성 검사: {result.IntegrityResult}\n\n" +
+                        $"오류 내용:\n{result.Message}",
+                        "이력 DB 복구 실패",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning
+                    );
+
+                    return;
+                }
+
+                MessageBoxResult openResult = MessageBox.Show(
+                    $"이력 DB 복구가 완료되었습니다.\n\n" +
+                    $"원본 DB:\n{result.SourceDbPath}\n\n" +
+                    $"복구 DB:\n{result.RecoveredDbPath}\n\n" +
+                    $"원본 Log 개수: {FormatRecoveryCount(result.OriginalLogCount)}\n" +
+                    $"복구 Log 개수: {FormatRecoveryCount(result.RecoveredLogCount)}\n" +
+                    $"무결성 검사: {result.IntegrityResult}\n\n" +
+                    $"복구된 DB를 바로 열까요?",
+                    "이력 DB 복구 완료",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Information
+                );
+
+                if (openResult == MessageBoxResult.Yes)
+                {
+                    await OpenHistoryFileByPathAsync(result.RecoveredDbPath);
+                    return;
+                }
+
+                FixedTimeRowsPanel.Children.Clear();
+                LogRowsPanel.Children.Clear();
+
+                FixedTimeRowsPanel.Children.Add(CreateFixedEmptyCell());
+                LogRowsPanel.Children.Add(CreateEmptyRow(""));
+            }
+            catch (Exception ex)
+            {
+                FixedTimeRowsPanel.Children.Clear();
+                LogRowsPanel.Children.Clear();
+
+                FixedTimeRowsPanel.Children.Add(CreateFixedEmptyCell());
+                LogRowsPanel.Children.Add(CreateEmptyRow("이력 DB 복구에 실패했습니다."));
+
+                MessageBox.Show(
+                    $"이력 DB 복구에 실패했습니다.\n\n" +
+                    $"확인 경로:\n{sourceDbPath}\n\n" +
+                    $"오류 내용:\n{ex.Message}",
+                    "이력 DB 복구 오류",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error
+                );
+            }
+        }
+
+        private static string FormatRecoveryCount(int count)
+        {
+            return count < 0
+                ? "확인 불가"
+                : count.ToString("N0");
         }
 
         private async Task OpenAutoHistoryFileAsync()
@@ -459,6 +609,26 @@ namespace DbViewer
 
         private async Task OpenHistoryFileByPathAsync(string dbPath)
         {
+            string extension = Path.GetExtension(dbPath).ToLowerInvariant();
+
+            if (extension == ".txt")
+            {
+                await OpenTxtHistoryFileByPathAsync(dbPath);
+                return;
+            }
+
+            if (extension != ".db")
+            {
+                MessageBox.Show(
+                    "지원하지 않는 이력 파일 형식입니다.\n\nDB 파일(.db) 또는 텍스트 이력 파일(.txt)을 선택하세요.",
+                    "이력 보기",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning
+                );
+
+                return;
+            }
+
             try
             {
                 CancelRunningJobs();
@@ -475,27 +645,62 @@ namespace DbViewer
                     DbCopyService.CopyDbToTemp(dbPath)
                 );
 
-                _repository = new LogRepository(copiedDbPath);
-
                 SetLoadingState("이력 파일을 확인하는 중입니다...");
 
-                (int totalCount, string startDate, string endDate) result = await Task.Run(() =>
+                DbOpenCheckResult result = await Task.Run(() =>
+                    CheckHistoryDatabaseFile(copiedDbPath)
+                );
+
+                if (!result.Success)
                 {
-                    _repository.Validate();
+                    _repository = null;
+                    _currentRows.Clear();
 
-                    int total = _repository.CountAllLogs();
-                    (string start, string end) range = _repository.GetLogDateRange();
+                    _selectedCategories.Clear();
+                    UpdateCategoryCardActiveStates();
 
-                    return (total, range.start, range.end);
-                });
+                    ResetCategoryCountText();
+                    ClearQueryCaches();
 
-                _totalCount = result.totalCount;
+                    StartDateText.Text = "";
+                    EndDateText.Text = "";
+                    _dbStartDate = null;
+                    _dbEndDate = null;
+                    UpdateDateArrowVisibility();
+                    DateCalendarDropdown.Visibility = Visibility.Collapsed;
+
+                    FixedTimeRowsPanel.Children.Clear();
+                    LogRowsPanel.Children.Clear();
+
+                    FixedTimeRowsPanel.Children.Add(CreateFixedEmptyCell());
+                    LogRowsPanel.Children.Add(CreateEmptyRow("잘못된 이력 파일입니다."));
+
+                    MessageBox.Show(
+                        $"잘못된 이력 파일입니다.\n\n" +
+                        $"선택 경로:\n{dbPath}\n\n" +
+                        $"가능한 원인:\n" +
+                        $"- DB 파일 손상\n" +
+                        $"- Log 테이블 없음\n" +
+                        $"- SQLite DB가 아닌 파일 선택\n" +
+                        $"- 기록 중인 DB 파일을 직접 선택\n\n" +
+                        $"오류 내용:\n{result.ErrorMessage}",
+                        "이력 보기 오류",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning
+                    );
+
+                    return;
+                }
+
+                _repository = new LogRepository(copiedDbPath);
+
+                _totalCount = result.TotalCount;
                 _totalPages = CalculateTotalPages(_totalCount);
 
-                StartDateText.Text = result.startDate;
-                EndDateText.Text = result.endDate;
+                StartDateText.Text = result.StartDate;
+                EndDateText.Text = result.EndDate;
 
-                ApplyDbDateRange(result.startDate, result.endDate);
+                ApplyDbDateRange(result.StartDate, result.EndDate);
                 UpdateDateArrowVisibility();
 
                 _currentMode = "all";
@@ -503,6 +708,7 @@ namespace DbViewer
                 _currentStartDate = "";
                 _currentEndDate = "";
                 _currentPage = 1;
+                _activeRowsCacheKey = "all";
 
                 TotalLogCountText.Text = _totalCount.ToString("N0");
 
@@ -534,23 +740,700 @@ namespace DbViewer
                 LogRowsPanel.Children.Clear();
 
                 FixedTimeRowsPanel.Children.Add(CreateFixedEmptyCell());
-                LogRowsPanel.Children.Add(CreateEmptyRow("이력 파일을 정상적으로 읽을 수 없습니다."));
+                LogRowsPanel.Children.Add(CreateEmptyRow("잘못된 이력 파일입니다."));
 
                 MessageBox.Show(
-                    $"이력 파일을 정상적으로 읽을 수 없습니다.\n\n" +
+                    $"잘못된 이력 파일입니다.\n\n" +
                     $"선택 경로:\n{dbPath}\n\n" +
                     $"가능한 원인:\n" +
                     $"- DB 파일 손상\n" +
+                    $"- SQLite DB가 아닌 파일 선택\n" +
                     $"- Log 테이블 없음\n" +
-                    $"- 로그 기록 중 복사된 파일\n" +
-                    $"- Log.db-wal / Log.db-shm 파일 누락\n" +
+                    $"- Log 테이블 컬럼 구조 불일치\n" +
                     $"- Windows 폴더 접근 권한 문제\n\n" +
                     $"오류 내용:\n{ex.Message}",
                     "이력 보기 오류",
                     MessageBoxButton.OK,
-                    MessageBoxImage.Error
+                    MessageBoxImage.Warning
                 );
             }
+        }
+
+        private static DbOpenCheckResult CheckHistoryDatabaseFile(string dbPath)
+        {
+            if (string.IsNullOrWhiteSpace(dbPath))
+            {
+                return new DbOpenCheckResult
+                {
+                    Success = false,
+                    ErrorMessage = "DB 파일 경로가 비어 있습니다."
+                };
+            }
+
+            if (!File.Exists(dbPath))
+            {
+                return new DbOpenCheckResult
+                {
+                    Success = false,
+                    ErrorMessage = "DB 파일을 찾을 수 없습니다."
+                };
+            }
+
+            try
+            {
+                using SqliteConnection connection = new($"Data Source={dbPath};Mode=ReadOnly");
+                connection.Open();
+
+                string integrityResult = ExecuteScalarText(
+                    connection,
+                    "PRAGMA integrity_check;"
+                );
+
+                if (!string.Equals(integrityResult, "ok", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new DbOpenCheckResult
+                    {
+                        Success = false,
+                        ErrorMessage = $"DB 무결성 검사 실패: {integrityResult}"
+                    };
+                }
+
+                bool hasLogTable = string.Equals(
+                    ExecuteScalarText(
+                        connection,
+                        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'Log' LIMIT 1;"
+                    ),
+                    "Log",
+                    StringComparison.OrdinalIgnoreCase
+                );
+
+                if (!hasLogTable)
+                {
+                    return new DbOpenCheckResult
+                    {
+                        Success = false,
+                        ErrorMessage = "Log 테이블이 없습니다."
+                    };
+                }
+
+                List<string> columns = GetTableColumns(connection, "Log");
+
+                string[] requiredColumns =
+                {
+                    "ID",
+                    "GRP",
+                    "DTIME",
+                    "Type",
+                    "Action",
+                    "Section",
+                    "Contents",
+                    "Packet"
+                };
+
+                List<string> missingColumns = requiredColumns
+                    .Where(required => !columns.Contains(required, StringComparer.OrdinalIgnoreCase))
+                    .ToList();
+
+                if (missingColumns.Count > 0)
+                {
+                    return new DbOpenCheckResult
+                    {
+                        Success = false,
+                        ErrorMessage = $"Log 테이블 컬럼이 맞지 않습니다. 누락 컬럼: {string.Join(", ", missingColumns)}"
+                    };
+                }
+
+                int totalCount = ExecuteScalarInt(
+                    connection,
+                    "SELECT COUNT(*) FROM Log;"
+                );
+
+                string startDate = ExecuteScalarText(
+                    connection,
+                    "SELECT SUBSTR(DTIME, 1, 10) FROM Log WHERE DTIME IS NOT NULL AND LENGTH(DTIME) >= 10 ORDER BY DTIME ASC, ID ASC LIMIT 1;"
+                );
+
+                string endDate = ExecuteScalarText(
+                    connection,
+                    "SELECT SUBSTR(DTIME, 1, 10) FROM Log WHERE DTIME IS NOT NULL AND LENGTH(DTIME) >= 10 ORDER BY DTIME DESC, ID DESC LIMIT 1;"
+                );
+
+                return new DbOpenCheckResult
+                {
+                    Success = true,
+                    TotalCount = totalCount,
+                    StartDate = startDate,
+                    EndDate = endDate
+                };
+            }
+            catch (SqliteException ex)
+            {
+                return new DbOpenCheckResult
+                {
+                    Success = false,
+                    ErrorMessage = $"SQLite 파일을 읽을 수 없습니다. {ex.Message}"
+                };
+            }
+            catch (Exception ex)
+            {
+                return new DbOpenCheckResult
+                {
+                    Success = false,
+                    ErrorMessage = ex.Message
+                };
+            }
+        }
+
+        private static string ExecuteScalarText(SqliteConnection connection, string commandText)
+        {
+            using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = commandText;
+
+            object? result = command.ExecuteScalar();
+
+            return result?.ToString()?.Trim() ?? "";
+        }
+
+        private static int ExecuteScalarInt(SqliteConnection connection, string commandText)
+        {
+            using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = commandText;
+
+            object? result = command.ExecuteScalar();
+
+            if (result == null)
+            {
+                return 0;
+            }
+
+            return Convert.ToInt32(result);
+        }
+
+        private static List<string> GetTableColumns(SqliteConnection connection, string tableName)
+        {
+            List<string> columns = new();
+
+            using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = $"PRAGMA table_info({tableName});";
+
+            using SqliteDataReader reader = command.ExecuteReader();
+
+            while (reader.Read())
+            {
+                string columnName = reader["name"]?.ToString() ?? "";
+
+                if (!string.IsNullOrWhiteSpace(columnName))
+                {
+                    columns.Add(columnName);
+                }
+            }
+
+            return columns;
+        }
+        private async Task OpenTxtHistoryFileByPathAsync(string txtPath)
+        {
+            try
+            {
+                CancelRunningJobs();
+                ClearMoveTargetHighlight();
+
+                _selectedCategories.Clear();
+                UpdateCategoryCardActiveStates();
+
+                ResetCategoryCountText();
+                ClearQueryCaches();
+
+                SetLoadingState("텍스트 이력 파일을 변환하는 중입니다...");
+
+                TxtConvertResult convertResult = await Task.Run(() =>
+                    ConvertTxtHistoryToTempDb(txtPath)
+                );
+
+                if (!convertResult.Success)
+                {
+                    _repository = null;
+                    _currentRows.Clear();
+
+                    _selectedCategories.Clear();
+                    UpdateCategoryCardActiveStates();
+
+                    ResetCategoryCountText();
+                    ClearQueryCaches();
+
+                    StartDateText.Text = "";
+                    EndDateText.Text = "";
+                    _dbStartDate = null;
+                    _dbEndDate = null;
+                    UpdateDateArrowVisibility();
+                    DateCalendarDropdown.Visibility = Visibility.Collapsed;
+
+                    FixedTimeRowsPanel.Children.Clear();
+                    LogRowsPanel.Children.Clear();
+
+                    FixedTimeRowsPanel.Children.Add(CreateFixedEmptyCell());
+                    LogRowsPanel.Children.Add(CreateEmptyRow("잘못된 텍스트 이력 파일입니다."));
+
+                    MessageBox.Show(
+                        $"잘못된 텍스트 이력 파일입니다.\n\n" +
+                        $"선택 경로:\n{txtPath}\n\n" +
+                        $"가능한 원인:\n" +
+                        $"- 이력 TXT 파일이 아님\n" +
+                        $"- 날짜/시간 형식이 없음\n" +
+                        $"- 컬럼 간격이 맞지 않음\n" +
+                        $"- 파일 내용이 비어 있음\n\n" +
+                        $"오류 내용:\n{convertResult.ErrorMessage}",
+                        "텍스트 이력 보기 오류",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning
+                    );
+
+                    return;
+                }
+
+                string convertedDbPath = convertResult.DbPath;
+
+                SetLoadingState("텍스트 이력 파일을 확인하는 중입니다...");
+
+                DbOpenCheckResult result = await Task.Run(() =>
+                    CheckHistoryDatabaseFile(convertedDbPath)
+                );
+
+                if (!result.Success)
+                {
+                    _repository = null;
+                    _currentRows.Clear();
+
+                    _selectedCategories.Clear();
+                    UpdateCategoryCardActiveStates();
+
+                    ResetCategoryCountText();
+                    ClearQueryCaches();
+
+                    StartDateText.Text = "";
+                    EndDateText.Text = "";
+                    _dbStartDate = null;
+                    _dbEndDate = null;
+                    UpdateDateArrowVisibility();
+                    DateCalendarDropdown.Visibility = Visibility.Collapsed;
+
+                    FixedTimeRowsPanel.Children.Clear();
+                    LogRowsPanel.Children.Clear();
+
+                    FixedTimeRowsPanel.Children.Add(CreateFixedEmptyCell());
+                    LogRowsPanel.Children.Add(CreateEmptyRow("잘못된 텍스트 이력 파일입니다."));
+
+                    MessageBox.Show(
+                        $"잘못된 텍스트 이력 파일입니다.\n\n" +
+                        $"선택 경로:\n{txtPath}\n\n" +
+                        $"가능한 원인:\n" +
+                        $"- 지원하지 않는 텍스트 형식\n" +
+                        $"- 날짜/시간 형식 누락\n" +
+                        $"- 변환된 DB에 Log 테이블 없음\n" +
+                        $"- 변환 중 데이터 구조 오류\n\n" +
+                        $"오류 내용:\n{result.ErrorMessage}",
+                        "텍스트 이력 보기 오류",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning
+                    );
+
+                    return;
+                }
+
+                _repository = new LogRepository(convertedDbPath);
+
+                _totalCount = result.TotalCount;
+                _totalPages = CalculateTotalPages(_totalCount);
+
+                StartDateText.Text = result.StartDate;
+                EndDateText.Text = result.EndDate;
+
+                ApplyDbDateRange(result.StartDate, result.EndDate);
+                UpdateDateArrowVisibility();
+
+                _currentMode = "all";
+                _currentKeyword = "";
+                _currentStartDate = "";
+                _currentEndDate = "";
+                _currentPage = 1;
+                _activeRowsCacheKey = "all";
+
+                TotalLogCountText.Text = _totalCount.ToString("N0");
+
+                UpdateCategoryCardActiveStates();
+
+                StartBackgroundCategoryCache();
+
+                await LoadCurrentPageAsync(showLoading: false);
+            }
+            catch (Exception ex)
+            {
+                _repository = null;
+                _currentRows.Clear();
+
+                _selectedCategories.Clear();
+                UpdateCategoryCardActiveStates();
+
+                ResetCategoryCountText();
+                ClearQueryCaches();
+
+                StartDateText.Text = "";
+                EndDateText.Text = "";
+                _dbStartDate = null;
+                _dbEndDate = null;
+                UpdateDateArrowVisibility();
+                DateCalendarDropdown.Visibility = Visibility.Collapsed;
+
+                FixedTimeRowsPanel.Children.Clear();
+                LogRowsPanel.Children.Clear();
+
+                FixedTimeRowsPanel.Children.Add(CreateFixedEmptyCell());
+                LogRowsPanel.Children.Add(CreateEmptyRow("잘못된 텍스트 이력 파일입니다."));
+
+                MessageBox.Show(
+                    $"잘못된 텍스트 이력 파일입니다.\n\n" +
+                    $"선택 경로:\n{txtPath}\n\n" +
+                    $"가능한 원인:\n" +
+                    $"- 이력 TXT 파일이 아님\n" +
+                    $"- 날짜/시간 형식 누락\n" +
+                    $"- 컬럼 간격 깨짐\n" +
+                    $"- 한글 인코딩 문제\n\n" +
+                    $"오류 내용:\n{ex.Message}",
+                    "텍스트 이력 보기 오류",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning
+                );
+            }
+        }
+
+        private static TxtConvertResult ConvertTxtHistoryToTempDb(string txtPath)
+        {
+            if (string.IsNullOrWhiteSpace(txtPath))
+            {
+                return new TxtConvertResult
+                {
+                    Success = false,
+                    ErrorMessage = "텍스트 파일 경로가 비어 있습니다."
+                };
+            }
+
+            if (!File.Exists(txtPath))
+            {
+                return new TxtConvertResult
+                {
+                    Success = false,
+                    ErrorMessage = "텍스트 파일을 찾을 수 없습니다."
+                };
+            }
+
+            List<LogRow> rows;
+
+            try
+            {
+                rows = ReadTxtHistoryRows(txtPath);
+            }
+            catch (Exception ex)
+            {
+                return new TxtConvertResult
+                {
+                    Success = false,
+                    ErrorMessage = $"텍스트 파일을 읽는 중 오류가 발생했습니다. {ex.Message}"
+                };
+            }
+
+            if (rows.Count == 0)
+            {
+                return new TxtConvertResult
+                {
+                    Success = false,
+                    ErrorMessage = "텍스트 파일에서 이력 데이터를 찾을 수 없습니다."
+                };
+            }
+
+            try
+            {
+                string tempDir = Path.Combine(
+                    Path.GetTempPath(),
+                    "DbViewer",
+                    "TxtHistory"
+                );
+
+                Directory.CreateDirectory(tempDir);
+
+                string tempDbPath = Path.Combine(
+                    tempDir,
+                    $"TxtHistory_{DateTime.Now:yyyyMMdd_HHmmss_fff}.db"
+                );
+
+                if (File.Exists(tempDbPath))
+                {
+                    File.Delete(tempDbPath);
+                }
+
+                using SqliteConnection connection = new($"Data Source={tempDbPath}");
+                connection.Open();
+
+                using SqliteCommand createCommand = connection.CreateCommand();
+                createCommand.CommandText =
+                    "CREATE TABLE Log (" +
+                    "ID INTEGER PRIMARY KEY, " +
+                    "GRP TEXT, " +
+                    "DTIME TEXT, " +
+                    "Type TEXT, " +
+                    "Action TEXT, " +
+                    "Section TEXT, " +
+                    "Contents TEXT, " +
+                    "Packet TEXT" +
+                    ");";
+                createCommand.ExecuteNonQuery();
+
+                using SqliteTransaction transaction = connection.BeginTransaction();
+
+                using SqliteCommand insertCommand = connection.CreateCommand();
+                insertCommand.Transaction = transaction;
+                insertCommand.CommandText =
+                    "INSERT INTO Log " +
+                    "(ID, GRP, DTIME, Type, Action, Section, Contents, Packet) " +
+                    "VALUES " +
+                    "($id, $grp, $dtime, $type, $action, $section, $contents, $packet);";
+
+                SqliteParameter idParam = insertCommand.Parameters.Add("$id", SqliteType.Integer);
+                SqliteParameter grpParam = insertCommand.Parameters.Add("$grp", SqliteType.Text);
+                SqliteParameter dtimeParam = insertCommand.Parameters.Add("$dtime", SqliteType.Text);
+                SqliteParameter typeParam = insertCommand.Parameters.Add("$type", SqliteType.Text);
+                SqliteParameter actionParam = insertCommand.Parameters.Add("$action", SqliteType.Text);
+                SqliteParameter sectionParam = insertCommand.Parameters.Add("$section", SqliteType.Text);
+                SqliteParameter contentsParam = insertCommand.Parameters.Add("$contents", SqliteType.Text);
+                SqliteParameter packetParam = insertCommand.Parameters.Add("$packet", SqliteType.Text);
+
+                /*
+                 * TXT 파일은 보통 최신순으로 저장되어 있다.
+                 * LogRepository가 ORDER BY DTIME DESC, ID DESC로 읽는 경우,
+                 * 같은 초의 로그 순서를 최대한 TXT 원본 순서와 맞추기 위해
+                 * 먼저 나온 줄에 더 큰 ID를 부여한다.
+                 */
+                int total = rows.Count;
+
+                for (int i = 0; i < rows.Count; i++)
+                {
+                    LogRow row = rows[i];
+
+                    idParam.Value = total - i;
+                    grpParam.Value = row.Group;
+                    dtimeParam.Value = row.DTime;
+                    typeParam.Value = row.Type;
+                    actionParam.Value = row.Action;
+                    sectionParam.Value = row.Section;
+                    contentsParam.Value = row.Contents;
+                    packetParam.Value = row.Packet;
+
+                    insertCommand.ExecuteNonQuery();
+                }
+
+                transaction.Commit();
+
+                return new TxtConvertResult
+                {
+                    Success = true,
+                    DbPath = tempDbPath
+                };
+            }
+            catch (Exception ex)
+            {
+                return new TxtConvertResult
+                {
+                    Success = false,
+                    ErrorMessage = $"텍스트 이력을 DB로 변환하는 중 오류가 발생했습니다. {ex.Message}"
+                };
+            }
+        }
+
+        private static List<LogRow> ReadTxtHistoryRows(string txtPath)
+        {
+            string[] lines = ReadHistoryTextLines(txtPath);
+
+            List<LogRow> rows = new();
+
+            foreach (string line in lines)
+            {
+                LogRow? row = ParseTxtHistoryLine(line);
+
+                if (row == null)
+                {
+                    continue;
+                }
+
+                rows.Add(row);
+            }
+
+            return rows;
+        }
+
+        private static string[] ReadHistoryTextLines(string txtPath)
+        {
+            byte[] bytes = File.ReadAllBytes(txtPath);
+
+            string text;
+
+            if (bytes.Length >= 3 &&
+                bytes[0] == 0xEF &&
+                bytes[1] == 0xBB &&
+                bytes[2] == 0xBF)
+            {
+                text = Encoding.UTF8.GetString(bytes);
+            }
+            else
+            {
+                try
+                {
+                    UTF8Encoding strictUtf8 = new(
+                        encoderShouldEmitUTF8Identifier: false,
+                        throwOnInvalidBytes: true
+                    );
+
+                    text = strictUtf8.GetString(bytes);
+                }
+                catch
+                {
+                    Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+                    text = Encoding.GetEncoding(949).GetString(bytes);
+                }
+            }
+
+            return text
+                .Replace("\r\n", "\n")
+                .Replace("\r", "\n")
+                .Split('\n');
+        }
+
+        private static LogRow? ParseTxtHistoryLine(string line)
+        {
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                return null;
+            }
+
+            string trimmedLine = line.Trim();
+
+            if (!Regex.IsMatch(
+                    trimmedLine,
+                    @"^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}"
+                ))
+            {
+                return null;
+            }
+
+            string[] parts = Regex
+                .Split(trimmedLine, @"\s{2,}")
+                .Where(part => !string.IsNullOrWhiteSpace(part))
+                .Select(part => part.Trim())
+                .ToArray();
+
+            if (parts.Length < 3)
+            {
+                return null;
+            }
+
+            string dtime = parts[0];
+            string type = parts[1];
+            string action = "";
+            string section = "";
+            string contents = "";
+
+            if (parts.Length >= 5)
+            {
+                action = parts[2];
+                section = parts[3];
+                contents = string.Join(" ", parts.Skip(4)).Trim();
+            }
+            else if (parts.Length == 4)
+            {
+                if (IsKnownTxtAction(parts[2]) && !LooksLikeTxtSection(parts[2]))
+                {
+                    action = parts[2];
+                    section = parts[3];
+                    contents = "";
+                }
+                else
+                {
+                    action = "";
+                    section = parts[2];
+                    contents = parts[3];
+                }
+            }
+            else if (parts.Length == 3)
+            {
+                if (IsKnownTxtAction(parts[2]) && !LooksLikeTxtSection(parts[2]))
+                {
+                    action = parts[2];
+                    section = "";
+                    contents = "";
+                }
+                else
+                {
+                    action = "";
+                    section = parts[2];
+                    contents = "";
+                }
+            }
+
+            return new LogRow
+            {
+                Id = 0,
+                Group = "",
+                DTime = dtime,
+                Type = NormalizeTxtType(type),
+                Action = NormalizeTxtAction(action),
+                Section = section,
+                Contents = contents,
+                Packet = ""
+            };
+        }
+
+        private static string NormalizeTxtType(string value)
+        {
+            string type = value.Trim();
+
+            if (type == "MCC스위치")
+            {
+                return "MCC";
+            }
+
+            return type;
+        }
+
+        private static string NormalizeTxtAction(string value)
+        {
+            return value.Trim();
+        }
+
+        private static bool IsKnownTxtAction(string value)
+        {
+            string action = value.Trim();
+
+            return action is
+                "발생" or
+                "소거" or
+                "복구" or
+                "해제" or
+                "ON" or
+                "OFF" or
+                "기동" or
+                "정지" or
+                "자동" or
+                "수동";
+        }
+
+        private static bool LooksLikeTxtSection(string value)
+        {
+            string section = value.Trim();
+
+            return Regex.IsMatch(section, @"^\d{2}#") ||
+                   section.Contains("수신기") ||
+                   section.Contains("중계반") ||
+                   section.Contains("계통") ||
+                   section.Contains("중계기") ||
+                   section.Contains("MCC") ||
+                   section.Contains("AN");
         }
 
         private async Task LoadAllFirstPageAsync()
@@ -1133,6 +2016,48 @@ namespace DbViewer
             await LoadCurrentPageAsync();
         }
 
+        private async Task ClearSearchKeywordAndReloadAllAsync()
+        {
+            SearchKeywordTextBox.Text = "";
+            SearchKeywordTextBox.Focus();
+            SearchKeywordTextBox.CaretIndex = 0;
+
+            ClearMoveTargetHighlight();
+
+            /*
+             * DB/TXT 이력 파일을 아직 열지 않은 상태에서는
+             * 검색창 글자만 지우고 끝낸다.
+             */
+            if (_repository == null)
+            {
+                return;
+            }
+
+            /*
+             * 검색 결과 화면에서 X를 누르면 전체 로그로 돌아간다.
+             * 날짜 조회나 카테고리 필터 상태에서 X를 누른 경우도
+             * 검색어 제거 버튼의 의미를 명확하게 하기 위해 전체 로그로 복귀한다.
+             */
+            _selectedCategories.Clear();
+            UpdateCategoryCardActiveStates();
+
+            _currentMode = "all";
+            _currentKeyword = "";
+            _currentStartDate = "";
+            _currentEndDate = "";
+            _currentPage = 1;
+            _activeRowsCacheKey = "all";
+
+            _totalCount = await Task.Run(() => _repository.CountAllLogs());
+            _totalPages = CalculateTotalPages(_totalCount);
+
+            TotalLogCountText.Text = _totalCount.ToString("N0");
+
+            SaveBaseQueryState();
+
+            await LoadCurrentPageAsync(showLoading: false, resetScroll: true);
+        }
+
         private async Task LoadDateFirstPageAsync()
         {
             if (_repository == null)
@@ -1250,44 +2175,6 @@ namespace DbViewer
             await LoadAllFirstPageAsync();
         }
 
-        private async Task ResetAsync()
-        {
-            SearchKeywordTextBox.Text = "";
-
-            ClearMoveTargetHighlight();
-
-            _selectedCategories.Clear();
-            UpdateCategoryCardActiveStates();
-
-            if (_repository == null)
-            {
-                StartDateText.Text = "";
-                EndDateText.Text = "";
-                _dbStartDate = null;
-                _dbEndDate = null;
-                UpdateDateArrowVisibility();
-                DateCalendarDropdown.Visibility = Visibility.Collapsed;
-
-                FixedTimeRowsPanel.Children.Clear();
-                LogRowsPanel.Children.Clear();
-
-                FixedTimeRowsPanel.Children.Add(CreateFixedEmptyCell());
-                LogRowsPanel.Children.Add(CreateEmptyRow("이력 파일을 선택하세요."));
-                return;
-            }
-
-            (string startDate, string endDate) range = await Task.Run(() =>
-                _repository.GetLogDateRange()
-            );
-
-            StartDateText.Text = range.startDate;
-            EndDateText.Text = range.endDate;
-
-            ApplyDbDateRange(range.startDate, range.endDate);
-            UpdateDateArrowVisibility();
-
-            await LoadAllFirstPageAsync();
-        }
 
         private void OpenDateCalendar(Border targetButton, TextBlock targetText)
         {

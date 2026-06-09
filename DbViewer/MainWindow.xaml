@@ -521,12 +521,35 @@
                                     CornerRadius="14"
                                     Padding="14,9"
                                     Margin="0,12,10,0">
-                                <TextBox x:Name="SearchKeywordTextBox"
-                                         FontSize="14"
-                                         Foreground="#263A5E"
-                                         Background="Transparent"
-                                         BorderThickness="0"
-                                         VerticalContentAlignment="Center"/>
+
+                                <Grid>
+                                    <TextBox x:Name="SearchKeywordTextBox"
+                                                     FontSize="14"
+                                                     Foreground="#263A5E"
+                                                     Background="Transparent"
+                                                     BorderThickness="0"
+                                                     VerticalContentAlignment="Center"
+                                                     Padding="0,0,34,0"/>
+
+                                    <Border x:Name="SearchClearButton"
+                                            Width="26"
+                                            Height="26"
+                                            CornerRadius="13"
+                                            HorizontalAlignment="Right"
+                                            VerticalAlignment="Center"
+                                            Background="#66FFFFFF"
+                                            BorderBrush="#B8C9D8E8"
+                                            BorderThickness="1"
+                                            Cursor="Hand">
+                                        <TextBlock Text="×"
+                                                   FontSize="26"
+                                                   FontWeight="Bold"
+                                                   Foreground="#5D6F8A"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center"
+                                                   Margin="0,-5,0,0"/>
+                                    </Border>
+                                </Grid>
                             </Border>
 
                             <Border Grid.Row="1"
@@ -547,22 +570,6 @@
 
                             <Border Grid.Row="1"
                                     Grid.Column="5"
-                                    x:Name="ResetButton"
-                                    Style="{StaticResource GlassButtonStyle}"
-                                    CornerRadius="14"
-                                    Height="42"
-                                    Margin="0,12,8,0"
-                                    Cursor="Hand">
-                                <TextBlock Text="초기화"
-                                           FontSize="14"
-                                           FontWeight="Bold"
-                                           Foreground="#23395D"
-                                           HorizontalAlignment="Center"
-                                           VerticalAlignment="Center"/>
-                            </Border>
-
-                            <Border Grid.Row="1"
-                                    Grid.Column="6"
                                     x:Name="Keyboard"
                                     Style="{StaticResource GlassButtonStyle}"
                                     CornerRadius="14"
@@ -989,8 +996,7 @@
                 Background="#F8FFFFFF"
                 BorderBrush="#E6FFFFFF"
                 BorderThickness="1"
-                Padding="24"
-                Effect="{StaticResource RealGlassButtonShadow}">
+                Padding="24">
 
                     <StackPanel VerticalAlignment="Center">
 
