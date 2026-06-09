@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
@@ -34,9 +35,10 @@ namespace DbViewer
         private CancellationTokenSource? _renderCts;
         private CancellationTokenSource? _countCts;
         private CancellationTokenSource? _loadCts;
-        private bool _isHorizontalDragging = false;
+        private bool _isLogContentDragging = false;
         private Point _dragStartPoint;
         private double _dragStartHorizontalOffset;
+        private double _dragStartVerticalOffset;
 
         private readonly object _categoryCacheLock = new();
 
@@ -911,9 +913,21 @@ namespace DbViewer
 
         private void LogScrollViewer_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
-            _isHorizontalDragging = true;
+            DependencyObject? source = e.OriginalSource as DependencyObject;
+
+            /*
+             * 스크롤바 또는 스크롤바 손잡이(Thumb)를 클릭한 경우에는
+               세로 스크롤바를 직접 클릭/드래그해서 움직일 수 있다.
+             */
+            if (IsInsideScrollBar(source))
+            {
+                return;
+            }
+
+            _isLogContentDragging = true;
             _dragStartPoint = e.GetPosition(LogScrollViewer);
             _dragStartHorizontalOffset = LogScrollViewer.HorizontalOffset;
+            _dragStartVerticalOffset = LogScrollViewer.VerticalOffset;
 
             LogScrollViewer.CaptureMouse();
             e.Handled = true;
@@ -921,44 +935,78 @@ namespace DbViewer
 
         private void LogScrollViewer_PreviewMouseMove(object sender, MouseEventArgs e)
         {
-            if (!_isHorizontalDragging)
+            if (!_isLogContentDragging)
             {
                 return;
             }
 
+            if (e.LeftButton != MouseButtonState.Pressed)
+            {
+                EndLogContentDrag();
+                return;
+            }
+
             Point currentPoint = e.GetPosition(LogScrollViewer);
-            double deltaX = currentPoint.X - _dragStartPoint.X;
+
+            double dragSpeed = 1.5;
+
+            double deltaX = (currentPoint.X - _dragStartPoint.X) * dragSpeed;
+            double deltaY = (currentPoint.Y - _dragStartPoint.Y) * dragSpeed;
 
             /*
-             * 마우스를 왼쪽으로 끌면 오른쪽 내용, 즉 패킷 쪽이 보이게 한다.
+             * 마우스를 왼쪽으로 끌면 오른쪽 패킷 쪽이 보인다.
+             * 마우스를 위로 끌면 아래 로그가 보인다.
              */
             LogScrollViewer.ScrollToHorizontalOffset(_dragStartHorizontalOffset - deltaX);
+            LogScrollViewer.ScrollToVerticalOffset(_dragStartVerticalOffset - deltaY);
 
             e.Handled = true;
         }
 
         private void LogScrollViewer_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
         {
-            EndHorizontalDrag();
+            if (!_isLogContentDragging)
+            {
+                return;
+            }
+
+            EndLogContentDrag();
             e.Handled = true;
         }
 
         private void LogScrollViewer_MouseLeave(object sender, MouseEventArgs e)
         {
-            if (_isHorizontalDragging && e.LeftButton != MouseButtonState.Pressed)
+            if (_isLogContentDragging && e.LeftButton != MouseButtonState.Pressed)
             {
-                EndHorizontalDrag();
+                EndLogContentDrag();
             }
         }
 
-        private void EndHorizontalDrag()
+        private void EndLogContentDrag()
         {
-            _isHorizontalDragging = false;
+            _isLogContentDragging = false;
 
             if (LogScrollViewer.IsMouseCaptured)
             {
                 LogScrollViewer.ReleaseMouseCapture();
             }
+        }
+
+        private bool IsInsideScrollBar(DependencyObject? source)
+        {
+            DependencyObject? current = source;
+
+            while (current != null)
+            {
+                if (current is ScrollBar || current is Thumb)
+                {
+                    return true;
+                }
+
+                current = VisualTreeHelper.GetParent(current);
+            }
+
+            return false;
         }
 
         private void LogScrollViewer_ManipulationBoundaryFeedback(

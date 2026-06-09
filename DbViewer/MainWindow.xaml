@@ -802,8 +802,26 @@
                                           HorizontalScrollBarVisibility="Hidden"
                                           Background="Transparent"
                                           PanningMode="Both"
+                                          PanningRatio="1.5"
+                                          PanningDeceleration="0.001"
                                           CanContentScroll="False"
                                           ManipulationBoundaryFeedback="LogScrollViewer_ManipulationBoundaryFeedback">
+
+                                <ScrollViewer.Resources>
+
+                                    <!-- 세로 스크롤바 전체 폭 -->
+                                   
+                                    <Style TargetType="{x:Type ScrollBar}">
+                                        <Setter Property="Width" Value="22"/>
+                                        <Setter Property="MinWidth" Value="22"/>
+                                        <Setter Property="Background" Value="#EEF3FA"/>
+                                        <Setter Property="Opacity" Value="1"/>
+                                    </Style>
+
+                                    <Style TargetType="{x:Type Thumb}">
+                                        <Setter Property="MinHeight" Value="120"/>
+                                    </Style>
+                                </ScrollViewer.Resources>
 
                                 <StackPanel x:Name="LogRowsPanel"
                                             Width="930"/>
