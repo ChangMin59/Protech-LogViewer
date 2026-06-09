@@ -13,6 +13,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
+using System.IO;
 
 namespace DbViewer
 {
@@ -81,12 +82,36 @@ namespace DbViewer
         private string _baseEndDateBeforeCategory = "";
 
         private int _countJobVersion = 0;
+        private bool _isMoveMode = false;
+        private bool _isMoveNavigationRunning = false;
+        private int? _highlightedRowIndexInPage = null;
+
+        private const double LogRowVisualHeight = 50.0;
+        private const string MoveTargetLineTag = "MoveTargetLine";
+
+        private readonly Dictionary<string, string> _categoryDisplayNames = new()
+        {
+            ["fire"] = "화재",
+            ["alarm"] = "제경보",
+            ["relay_fault"] = "중계기 고장",
+            ["an_fault"] = "AN 고장",
+            ["line_fault"] = "단선",
+            ["output"] = "출력",
+            ["mcc"] = "MCC",
+            ["other"] = "기타"
+        };
 
         private sealed class QueryCacheEntry
         {
             public List<LogRow> Rows { get; init; } = new();
             public Dictionary<string, List<LogRow>> CategoryCache { get; init; } = new();
             public int TotalCount => Rows.Count;
+        }
+        private sealed class MoveTargetResult
+        {
+            public long RowId { get; init; }
+            public int PageNumber { get; init; }
+            public int RowIndexInPage { get; init; }
         }
 
         public MainWindow()
@@ -99,18 +124,118 @@ namespace DbViewer
 
         private void InitializeEvents()
         {
-            HistoryViewButton.MouseLeftButtonUp += async (_, _) => await OpenHistoryFileAsync();
+            HistoryViewButton.MouseLeftButtonUp += (_, _) => ShowHistoryOpenChoice();
+
+            ManualHistoryFileButton.MouseLeftButtonUp += async (_, e) =>
+            {
+                e.Handled = true;
+                HistoryOpenChoiceOverlay.Visibility = Visibility.Collapsed;
+                await OpenHistoryFileAsync();
+            };
+
+            AutoHistoryFileButton.MouseLeftButtonUp += async (_, e) =>
+            {
+                e.Handled = true;
+                HistoryOpenChoiceOverlay.Visibility = Visibility.Collapsed;
+                await OpenAutoHistoryFileAsync();
+            };
+
+            CancelHistoryOpenButton.MouseLeftButtonUp += (_, e) =>
+            {
+                e.Handled = true;
+                HistoryOpenChoiceOverlay.Visibility = Visibility.Collapsed;
+            };
+
+            ManualHistoryFileButton.TouchDown += async (_, e) =>
+            {
+                e.Handled = true;
+                HistoryOpenChoiceOverlay.Visibility = Visibility.Collapsed;
+                await OpenHistoryFileAsync();
+            };
+
+            AutoHistoryFileButton.TouchDown += async (_, e) =>
+            {
+                e.Handled = true;
+                HistoryOpenChoiceOverlay.Visibility = Visibility.Collapsed;
+                await OpenAutoHistoryFileAsync();
+            };
+
+            CancelHistoryOpenButton.TouchDown += (_, e) =>
+            {
+                e.Handled = true;
+                HistoryOpenChoiceOverlay.Visibility = Visibility.Collapsed;
+            };
+
+            ModeToggleButton.MouseLeftButtonUp += async (_, e) =>
+            {
+                e.Handled = true;
+                await ToggleMoveModeAsync();
+            };
+
+            ModeToggleButton.TouchDown += async (_, e) =>
+            {
+                e.Handled = true;
+                await ToggleMoveModeAsync();
+            };
 
             TotalLogButton.MouseLeftButtonUp += async (_, _) => await LoadAllFirstPageAsync();
 
-            FireLogButton.MouseLeftButtonUp += async (_, _) => await ToggleCategoryAsync("fire");
-            AlarmLogButton.MouseLeftButtonUp += async (_, _) => await ToggleCategoryAsync("alarm");
-            RelayErrorLogButton.MouseLeftButtonUp += async (_, _) => await ToggleCategoryAsync("relay_fault");
-            AnErrorLogButton.MouseLeftButtonUp += async (_, _) => await ToggleCategoryAsync("an_fault");
-            LineBreakLogButton.MouseLeftButtonUp += async (_, _) => await ToggleCategoryAsync("line_fault");
-            OutputLogButton.MouseLeftButtonUp += async (_, _) => await ToggleCategoryAsync("output");
-            MccLogButton.MouseLeftButtonUp += async (_, _) => await ToggleCategoryAsync("mcc");
-            EtcLogButton.MouseLeftButtonUp += async (_, _) => await ToggleCategoryAsync("other");
+            FireLogButton.MouseLeftButtonUp += async (_, _) => await HandleCategoryButtonAsync("fire");
+            AlarmLogButton.MouseLeftButtonUp += async (_, _) => await HandleCategoryButtonAsync("alarm");
+            RelayErrorLogButton.MouseLeftButtonUp += async (_, _) => await HandleCategoryButtonAsync("relay_fault");
+            AnErrorLogButton.MouseLeftButtonUp += async (_, _) => await HandleCategoryButtonAsync("an_fault");
+            LineBreakLogButton.MouseLeftButtonUp += async (_, _) => await HandleCategoryButtonAsync("line_fault");
+            OutputLogButton.MouseLeftButtonUp += async (_, _) => await HandleCategoryButtonAsync("output");
+            MccLogButton.MouseLeftButtonUp += async (_, _) => await HandleCategoryButtonAsync("mcc");
+            EtcLogButton.MouseLeftButtonUp += async (_, _) => await HandleCategoryButtonAsync("other");
+
+            FireLogButton.TouchDown += async (_, e) =>
+            {
+                e.Handled = true;
+                await HandleCategoryButtonAsync("fire");
+            };
+
+            AlarmLogButton.TouchDown += async (_, e) =>
+            {
+                e.Handled = true;
+                await HandleCategoryButtonAsync("alarm");
+            };
+
+            RelayErrorLogButton.TouchDown += async (_, e) =>
+            {
+                e.Handled = true;
+                await HandleCategoryButtonAsync("relay_fault");
+            };
+
+            AnErrorLogButton.TouchDown += async (_, e) =>
+            {
+                e.Handled = true;
+                await HandleCategoryButtonAsync("an_fault");
+            };
+
+            LineBreakLogButton.TouchDown += async (_, e) =>
+            {
+                e.Handled = true;
+                await HandleCategoryButtonAsync("line_fault");
+            };
+
+            OutputLogButton.TouchDown += async (_, e) =>
+            {
+                e.Handled = true;
+                await HandleCategoryButtonAsync("output");
+            };
+
+            MccLogButton.TouchDown += async (_, e) =>
+            {
+                e.Handled = true;
+                await HandleCategoryButtonAsync("mcc");
+            };
+
+            EtcLogButton.TouchDown += async (_, e) =>
+            {
+                e.Handled = true;
+                await HandleCategoryButtonAsync("other");
+            };
 
             SearchButton.MouseLeftButtonUp += async (_, _) => await SearchFirstPageAsync();
             ResetButton.MouseLeftButtonUp += async (_, _) => await ResetAsync();
@@ -265,14 +390,31 @@ namespace DbViewer
 
             PageSizeText.Text = $"{_pageSize:N0}건";
 
+            _highlightedRowIndexInPage = null;
+
             FixedTimeRowsPanel.Children.Clear();
             LogRowsPanel.Children.Clear();
 
             FixedTimeRowsPanel.Children.Add(CreateFixedEmptyCell());
-            LogRowsPanel.Children.Add(CreateEmptyRow("이력 파일을 선택하세요."));
+            LogRowsPanel.Children.Add(CreateEmptyRow(""));
 
             UpdatePageSizeDropdownStyle();
             RebuildPaginationButtons();
+        }
+
+        private void ShowHistoryOpenChoice()
+        {
+            if (DateCalendarDropdown.Visibility == Visibility.Visible)
+            {
+                CloseDateCalendarDropdown();
+            }
+
+            if (PageSizeDropdown.Visibility == Visibility.Visible)
+            {
+                PageSizeDropdown.Visibility = Visibility.Collapsed;
+            }
+
+            HistoryOpenChoiceOverlay.Visibility = Visibility.Visible;
         }
 
         private async Task OpenHistoryFileAsync()
@@ -289,9 +431,38 @@ namespace DbViewer
                 return;
             }
 
+            await OpenHistoryFileByPathAsync(dialog.FileName);
+        }
+
+        private async Task OpenAutoHistoryFileAsync()
+        {
+            string autoDbPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.Windows),
+                "Log.db"
+            );
+
+            if (!File.Exists(autoDbPath))
+            {
+                MessageBox.Show(
+                    $"Windows 폴더에서 Log.db 파일을 찾을 수 없습니다.\n\n" +
+                    $"확인 경로:\n{autoDbPath}",
+                    "파일 자동 탐색",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning
+                );
+
+                return;
+            }
+
+            await OpenHistoryFileByPathAsync(autoDbPath);
+        }
+
+        private async Task OpenHistoryFileByPathAsync(string dbPath)
+        {
             try
             {
                 CancelRunningJobs();
+                ClearMoveTargetHighlight();
 
                 _selectedCategories.Clear();
                 UpdateCategoryCardActiveStates();
@@ -301,7 +472,7 @@ namespace DbViewer
                 SetLoadingState("이력 파일을 복사하는 중입니다...");
 
                 string copiedDbPath = await Task.Run(() =>
-                    DbCopyService.CopyDbToTemp(dialog.FileName)
+                    DbCopyService.CopyDbToTemp(dbPath)
                 );
 
                 _repository = new LogRepository(copiedDbPath);
@@ -367,11 +538,13 @@ namespace DbViewer
 
                 MessageBox.Show(
                     $"이력 파일을 정상적으로 읽을 수 없습니다.\n\n" +
+                    $"선택 경로:\n{dbPath}\n\n" +
                     $"가능한 원인:\n" +
                     $"- DB 파일 손상\n" +
                     $"- Log 테이블 없음\n" +
                     $"- 로그 기록 중 복사된 파일\n" +
-                    $"- Log.db-wal / Log.db-shm 파일 누락\n\n" +
+                    $"- Log.db-wal / Log.db-shm 파일 누락\n" +
+                    $"- Windows 폴더 접근 권한 문제\n\n" +
                     $"오류 내용:\n{ex.Message}",
                     "이력 보기 오류",
                     MessageBoxButton.OK,
@@ -386,6 +559,8 @@ namespace DbViewer
             {
                 return;
             }
+
+            ClearMoveTargetHighlight();
 
             _selectedCategories.Clear();
             UpdateCategoryCardActiveStates();
@@ -407,7 +582,67 @@ namespace DbViewer
 
             await LoadCurrentPageAsync(showLoading: false);
         }
+        private async Task ToggleMoveModeAsync()
+        {
+            if (_repository == null)
+            {
+                return;
+            }
 
+            _isMoveMode = !_isMoveMode;
+
+            ModeToggleText.Text = _isMoveMode
+                ? "이동 모드"
+                : "필터 모드";
+
+            ModeToggleText.Foreground = _isMoveMode
+                ? new SolidColorBrush(Color.FromRgb(255, 90, 61))
+                : new SolidColorBrush(Color.FromRgb(35, 57, 93));
+
+            // 이동 모드로 들어갈 때는 기준 화면을 항상 전체 로그로 맞춘다.
+            if (_isMoveMode)
+            {
+                ClearMoveTargetHighlight();
+
+                _selectedCategories.Clear();
+                UpdateCategoryCardActiveStates();
+
+                _currentMode = "all";
+                _currentKeyword = "";
+                _currentStartDate = "";
+                _currentEndDate = "";
+                _currentPage = 1;
+                _activeRowsCacheKey = "all";
+
+                _totalCount = await Task.Run(() => _repository.CountAllLogs());
+                _totalPages = CalculateTotalPages(_totalCount);
+
+                TotalLogCountText.Text = _totalCount.ToString("N0");
+
+                SaveBaseQueryState();
+
+                await LoadCurrentPageAsync(showLoading: false, resetScroll: true);
+
+                return;
+            }
+
+            /*
+             * 이동 모드에서 필터 모드로 돌아갈 때는
+             * 현재 화면은 유지하고 빨간줄만 제거한다.
+             */
+            ClearMoveTargetHighlight();
+        }
+
+        private async Task HandleCategoryButtonAsync(string category)
+        {
+            if (_isMoveMode)
+            {
+                await MoveToNextCategoryLogAsync(category);
+                return;
+            }
+
+            await ToggleCategoryAsync(category);
+        }
         private async Task ToggleCategoryAsync(string category)
         {
             if (ShouldIgnoreCategoryClick())
@@ -419,6 +654,11 @@ namespace DbViewer
             {
                 return;
             }
+
+            /*
+             * 필터 모드로 카테고리를 선택하는 순간 이동 모드의 빨간 이동선은 남기지 않는다.
+             */
+            ClearMoveTargetHighlight();
 
             if (_currentMode != "category")
             {
@@ -447,7 +687,363 @@ namespace DbViewer
 
             await LoadCategoryPageFromCacheAsync();
         }
+        private async Task MoveToNextCategoryLogAsync(string category)
+        {
+            if (_repository == null)
+            {
+                return;
+            }
 
+            if (_currentRows.Count == 0)
+            {
+                return;
+            }
+
+            if (_isMoveNavigationRunning)
+            {
+                return;
+            }
+
+            _isMoveNavigationRunning = true;
+
+            try
+            {
+                LogRow? anchorRow = GetLastVisibleAnchorRow();
+
+                if (anchorRow == null)
+                {
+                    return;
+                }
+
+                string categoryName = _categoryDisplayNames.TryGetValue(category, out string? name)
+                    ? name
+                    : category;
+
+                MoveTargetResult? result = await Task.Run(() =>
+                    FindNextCategoryLogPosition(category, anchorRow)
+                );
+
+                if (result == null)
+                {
+                    MessageBox.Show(
+                        $"현재 화면 아래쪽의 다음 {categoryName} 로그가 없습니다.",
+                        "이동 모드",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information
+                    );
+
+                    return;
+                }
+
+                /*
+                 * 이동 모드에서는 필터링하지 않는다.
+                 * 현재 전체/기간/검색 조회 범위는 유지하고, 해당 카테고리의 다음 위치로만 이동한다.
+                 */
+                _selectedCategories.Clear();
+                UpdateCategoryCardActiveStates();
+
+                RestoreMoveBaseModeIfNeeded();
+
+                double targetOffset = result.RowIndexInPage * LogRowVisualHeight;
+
+                /*
+                 * 판매용 기준 핵심:
+                 * 같은 페이지에 이미 렌더링된 행이면 절대 다시 렌더링하지 않는다.
+                 * 기존 빨간줄 제거 -> 새 빨간줄 추가 -> 스크롤 이동만 수행한다.
+                 */
+                if (result.PageNumber == _currentPage)
+                {
+                    ApplyMoveTargetHighlight(result.RowIndexInPage);
+
+                    LogScrollViewer.ScrollToVerticalOffset(targetOffset);
+                    FixedTimeScrollViewer.ScrollToVerticalOffset(targetOffset);
+
+                    return;
+                }
+
+                /*
+                 * 다른 페이지로 넘어갈 때만 새 페이지를 렌더링한다.
+                 * 이때도 배치 렌더링을 쓰면 스크롤바가 아래로 갔다가 돌아오는 움직임이 보일 수 있으므로
+                 * 이동 모드 전용 즉시 렌더링으로 한 프레임 안에서 행 생성, 빨간줄 표시, 목표 위치 이동을 끝낸다.
+                 */
+                ClearMoveTargetHighlight();
+
+                _currentPage = result.PageNumber;
+
+                await LoadCurrentPageAsync(
+                    showLoading: false,
+                    resetScroll: false,
+                    instantRender: true,
+                    targetVerticalOffset: targetOffset,
+                    highlightRowIndex: result.RowIndexInPage
+                );
+            }
+            finally
+            {
+                _isMoveNavigationRunning = false;
+            }
+        }
+
+        private void ApplyMoveTargetHighlight(int rowIndexInPage)
+        {
+            ClearMoveTargetHighlight();
+
+            if (rowIndexInPage < 0)
+            {
+                return;
+            }
+
+            if (rowIndexInPage >= FixedTimeRowsPanel.Children.Count)
+            {
+                return;
+            }
+
+            if (rowIndexInPage >= LogRowsPanel.Children.Count)
+            {
+                return;
+            }
+
+            AddBottomHighlightLine(FixedTimeRowsPanel.Children[rowIndexInPage]);
+            AddBottomHighlightLine(LogRowsPanel.Children[rowIndexInPage]);
+
+            _highlightedRowIndexInPage = rowIndexInPage;
+        }
+
+        private void ClearMoveTargetHighlight()
+        {
+            if (_highlightedRowIndexInPage == null)
+            {
+                return;
+            }
+
+            int index = _highlightedRowIndexInPage.Value;
+
+            if (index >= 0 && index < FixedTimeRowsPanel.Children.Count)
+            {
+                RemoveBottomHighlightLine(FixedTimeRowsPanel.Children[index]);
+            }
+
+            if (index >= 0 && index < LogRowsPanel.Children.Count)
+            {
+                RemoveBottomHighlightLine(LogRowsPanel.Children[index]);
+            }
+
+            _highlightedRowIndexInPage = null;
+        }
+
+        private void AddBottomHighlightLine(UIElement rowElement)
+        {
+            if (rowElement is not Border border)
+            {
+                return;
+            }
+
+            if (border.Child is not Grid rootGrid)
+            {
+                return;
+            }
+
+            RemoveBottomHighlightLine(rowElement);
+
+            Border line = new()
+            {
+                Height = 2,
+                Background = new SolidColorBrush(Color.FromRgb(255, 90, 61)),
+                VerticalAlignment = VerticalAlignment.Bottom,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                Margin = new Thickness(0),
+                IsHitTestVisible = false,
+                SnapsToDevicePixels = true,
+                Tag = "MoveTargetLine"
+            };
+
+            Panel.SetZIndex(line, 999);
+            rootGrid.Children.Add(line);
+        }
+
+        private void RemoveBottomHighlightLine(UIElement rowElement)
+        {
+            if (rowElement is not Border border)
+            {
+                return;
+            }
+
+            if (border.Child is not Grid grid)
+            {
+                return;
+            }
+
+            List<UIElement> lines = grid.Children
+                .OfType<UIElement>()
+                .Where(child => child is Border b && Equals(b.Tag, MoveTargetLineTag))
+                .ToList();
+
+            foreach (UIElement line in lines)
+            {
+                grid.Children.Remove(line);
+            }
+        }
+
+        private LogRow? GetLastVisibleAnchorRow()
+        {
+            if (_currentRows.Count == 0)
+            {
+                return null;
+            }
+
+            /*
+             * 이동 모드 기준:
+             * 화면에 실제로 완전히 보이는 마지막 행을 기준으로 잡는다.
+             *
+             * 기존 방식처럼
+             * (VerticalOffset + ViewportHeight - 1) / RowHeight
+             * 로 계산하면, 화면 아래에 걸쳐 있거나 실제로는 잘려 있는 행까지
+             * 마지막 행으로 포함될 수 있다.
+             *
+             * 그래서 "완전히 보이는 마지막 행" 기준으로 계산한다.
+             */
+            double viewportHeight = LogScrollViewer.ViewportHeight;
+
+            if (viewportHeight <= 0)
+            {
+                viewportHeight = LogScrollViewer.ActualHeight;
+            }
+
+            double viewportTop = LogScrollViewer.VerticalOffset;
+            double viewportBottom = viewportTop + viewportHeight;
+
+            int lastFullyVisibleIndex = (int)Math.Floor(viewportBottom / LogRowVisualHeight) - 1;
+
+            lastFullyVisibleIndex = Math.Clamp(
+                lastFullyVisibleIndex,
+                0,
+                _currentRows.Count - 1
+            );
+
+            return _currentRows[lastFullyVisibleIndex];
+        }
+        private MoveTargetResult? FindNextCategoryLogPosition(
+            string category,
+            LogRow anchorRow)
+        {
+            if (_repository == null)
+            {
+                return null;
+            }
+
+            string moveMode = _currentMode == "category"
+                ? _baseModeBeforeCategory
+                : _currentMode;
+
+            string moveKeyword = _currentMode == "category"
+                ? _baseKeywordBeforeCategory
+                : _currentKeyword;
+
+            string moveStartDate = _currentMode == "category"
+                ? _baseStartDateBeforeCategory
+                : _currentStartDate;
+
+            string moveEndDate = _currentMode == "category"
+                ? _baseEndDateBeforeCategory
+                : _currentEndDate;
+
+            DateTime? filterStart = IsValidDate(moveStartDate)
+                ? DateTime.Parse(moveStartDate).Date
+                : null;
+
+            DateTime? filterEnd = IsValidDate(moveEndDate)
+                ? DateTime.Parse(moveEndDate).Date.AddDays(1).AddTicks(-1)
+                : null;
+
+            bool anchorFound = false;
+            int scopedIndex = -1;
+
+            foreach (LogRow row in _repository.StreamAllLogs())
+            {
+                if (!IsRowInMoveScope(row, moveMode, moveKeyword, filterStart, filterEnd))
+                {
+                    continue;
+                }
+
+                scopedIndex++;
+
+                if (!anchorFound)
+                {
+                    if (row.Id == anchorRow.Id)
+                    {
+                        anchorFound = true;
+                    }
+
+                    continue;
+                }
+
+                string rowTag = LogClassifier.ClassifyRowTag(row, scopedIndex);
+                List<string> categories = LogClassifier.GetCategoryKeys(row, rowTag);
+
+                if (!categories.Contains(category))
+                {
+                    continue;
+                }
+
+                int pageNumber = scopedIndex / _pageSize + 1;
+                int rowIndexInPage = scopedIndex % _pageSize;
+
+                return new MoveTargetResult
+                {
+                    RowId = row.Id,
+                    PageNumber = pageNumber,
+                    RowIndexInPage = rowIndexInPage
+                };
+            }
+
+            return null;
+        }
+        private bool IsRowInMoveScope(
+            LogRow row,
+            string mode,
+            string keyword,
+            DateTime? filterStart,
+            DateTime? filterEnd)
+        {
+            if (mode == "date_cache" || mode == "date")
+            {
+                return IsRowInDateRange(row, filterStart, filterEnd);
+            }
+
+            if (mode == "search")
+            {
+                return IsRowMatchedByKeyword(row, keyword);
+            }
+
+            return true;
+        }
+
+        private static bool IsRowMatchedByKeyword(LogRow row, string keyword)
+        {
+            if (string.IsNullOrWhiteSpace(keyword))
+            {
+                return true;
+            }
+
+            string target =
+                $"{row.DTime} {row.Type} {row.Action} {row.Section} {row.Contents} {row.Packet}";
+
+            return target.Contains(keyword, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private void RestoreMoveBaseModeIfNeeded()
+        {
+            if (_currentMode != "category")
+            {
+                return;
+            }
+
+            _currentMode = _baseModeBeforeCategory;
+            _activeRowsCacheKey = _baseCacheKeyBeforeCategory;
+            _currentKeyword = _baseKeywordBeforeCategory;
+            _currentStartDate = _baseStartDateBeforeCategory;
+            _currentEndDate = _baseEndDateBeforeCategory;
+        }
         private async Task LoadCategoryPageFromCacheAsync()
         {
             List<LogRow> combinedRows = GetSelectedCategoryRowsFromCache();
@@ -466,7 +1062,10 @@ namespace DbViewer
 
             if (!_categoryCacheReady && _categoryCacheBuilding && _currentRows.Count == 0)
             {
+                _highlightedRowIndexInPage = null;
+                FixedTimeRowsPanel.Children.Clear();
                 LogRowsPanel.Children.Clear();
+                FixedTimeRowsPanel.Children.Add(CreateFixedEmptyCell());
                 LogRowsPanel.Children.Add(CreateEmptyRow("선택한 카테고리 내용을 계산하는 중입니다..."));
                 return;
             }
@@ -510,6 +1109,8 @@ namespace DbViewer
                 return;
             }
 
+            ClearMoveTargetHighlight();
+
             string keyword = SearchKeywordTextBox.Text.Trim();
 
             if (string.IsNullOrWhiteSpace(keyword))
@@ -538,6 +1139,8 @@ namespace DbViewer
             {
                 return;
             }
+
+            ClearMoveTargetHighlight();
 
             string startDate = StartDateText.Text.Trim();
             string endDate = EndDateText.Text.Trim();
@@ -650,6 +1253,8 @@ namespace DbViewer
         private async Task ResetAsync()
         {
             SearchKeywordTextBox.Text = "";
+
+            ClearMoveTargetHighlight();
 
             _selectedCategories.Clear();
             UpdateCategoryCardActiveStates();
@@ -1020,7 +1625,12 @@ namespace DbViewer
             e.Handled = true;
         }
 
-        private async Task LoadCurrentPageAsync(bool showLoading = true)
+        private async Task LoadCurrentPageAsync(
+            bool showLoading = true,
+            bool resetScroll = true,
+            bool instantRender = false,
+            double? targetVerticalOffset = null,
+            int? highlightRowIndex = null)
         {
             if (_repository == null)
             {
@@ -1108,14 +1718,23 @@ namespace DbViewer
 
                 RebuildPaginationButtons();
 
-                await RenderRowsBatchedAsync(_currentRows);
+                await RenderRowsBatchedAsync(
+                    _currentRows,
+                    resetScroll,
+                    instantRender,
+                    targetVerticalOffset,
+                    highlightRowIndex
+                );
             }
             catch (OperationCanceledException)
             {
             }
             catch (Exception ex)
             {
+                _highlightedRowIndexInPage = null;
+                FixedTimeRowsPanel.Children.Clear();
                 LogRowsPanel.Children.Clear();
+                FixedTimeRowsPanel.Children.Add(CreateFixedEmptyCell());
                 LogRowsPanel.Children.Add(CreateEmptyRow("이력 내용을 불러오는 중 오류가 발생했습니다."));
                 RebuildPaginationButtons();
 
@@ -1140,6 +1759,8 @@ namespace DbViewer
                 return;
             }
 
+            ClearMoveTargetHighlight();
+
             _currentPage--;
 
             if (_currentMode == "category")
@@ -1162,6 +1783,8 @@ namespace DbViewer
             {
                 return;
             }
+
+            ClearMoveTargetHighlight();
 
             _currentPage++;
 
@@ -1192,6 +1815,8 @@ namespace DbViewer
         private async Task ChangePageSizeAsync(int size)
         {
             PageSizeDropdown.Visibility = Visibility.Collapsed;
+
+            ClearMoveTargetHighlight();
 
             _pageSize = size;
             PageSizeText.Text = $"{size:N0}건";
@@ -1235,20 +1860,30 @@ namespace DbViewer
             }
         }
 
-        private async Task RenderRowsBatchedAsync(List<LogRow> rows)
+        private async Task RenderRowsBatchedAsync(
+            List<LogRow> rows,
+            bool resetScroll = true,
+            bool instantRender = false,
+            double? targetVerticalOffset = null,
+            int? highlightRowIndex = null)
         {
             _renderCts?.Cancel();
             _renderCts = new CancellationTokenSource();
 
             CancellationToken token = _renderCts.Token;
 
+            _highlightedRowIndexInPage = null;
+
             FixedTimeRowsPanel.Children.Clear();
             LogRowsPanel.Children.Clear();
 
-            FixedTimeScrollViewer.ScrollToTop();
-            LogScrollViewer.ScrollToTop();
-            LogScrollViewer.ScrollToHorizontalOffset(0);
-            HeaderHorizontalScrollViewer.ScrollToHorizontalOffset(0);
+            if (resetScroll)
+            {
+                FixedTimeScrollViewer.ScrollToTop();
+                LogScrollViewer.ScrollToTop();
+                LogScrollViewer.ScrollToHorizontalOffset(0);
+                HeaderHorizontalScrollViewer.ScrollToHorizontalOffset(0);
+            }
 
             RebuildPaginationButtons();
 
@@ -1256,6 +1891,32 @@ namespace DbViewer
             {
                 FixedTimeRowsPanel.Children.Add(CreateFixedEmptyCell());
                 LogRowsPanel.Children.Add(CreateEmptyRow("표시할 이력 내용이 없습니다."));
+                return;
+            }
+
+            /*
+             * 이동 모드에서 다른 페이지로 넘어갈 때는 한 프레임 안에서 새 페이지 렌더링, 빨간줄 표시, 스크롤 이동을 끝낸다.
+             * 배치 렌더링처럼 중간에 await를 끼우면 ScrollViewer의 Extent가 단계적으로 변해서 스크롤바가 흔들려 보인다.
+             */
+            if (instantRender)
+            {
+                for (int i = 0; i < rows.Count; i++)
+                {
+                    FixedTimeRowsPanel.Children.Add(CreateFixedTimeCell(rows[i], i));
+                    LogRowsPanel.Children.Add(CreateScrollableLogRow(rows[i], i));
+                }
+
+                if (highlightRowIndex.HasValue)
+                {
+                    ApplyMoveTargetHighlight(highlightRowIndex.Value);
+                }
+
+                if (targetVerticalOffset.HasValue)
+                {
+                    LogScrollViewer.ScrollToVerticalOffset(targetVerticalOffset.Value);
+                    FixedTimeScrollViewer.ScrollToVerticalOffset(targetVerticalOffset.Value);
+                }
+
                 return;
             }
 
@@ -1310,6 +1971,17 @@ namespace DbViewer
                     {
                         await Task.Delay(1, token);
                     }
+                }
+
+                if (highlightRowIndex.HasValue)
+                {
+                    ApplyMoveTargetHighlight(highlightRowIndex.Value);
+                }
+
+                if (targetVerticalOffset.HasValue)
+                {
+                    LogScrollViewer.ScrollToVerticalOffset(targetVerticalOffset.Value);
+                    FixedTimeScrollViewer.ScrollToVerticalOffset(targetVerticalOffset.Value);
                 }
             }
             catch (OperationCanceledException)
@@ -1847,6 +2519,8 @@ namespace DbViewer
 
         private void SetLoadingState(string message)
         {
+            _highlightedRowIndexInPage = null;
+
             FixedTimeRowsPanel.Children.Clear();
             LogRowsPanel.Children.Clear();
 
@@ -1902,7 +2576,13 @@ namespace DbViewer
                 Background = LogStyleMapper.GetRowFill(rowTag),
                 BorderBrush = LogStyleMapper.GridLineBrush(),
                 BorderThickness = new Thickness(0, 0, 1, 1),
-                Padding = new Thickness(6, 6, 6, 6)
+                Padding = new Thickness(0),
+                SnapsToDevicePixels = true
+            };
+
+            Grid rootGrid = new()
+            {
+                SnapsToDevicePixels = true
             };
 
             TextBlock textBlock = new()
@@ -1916,10 +2596,13 @@ namespace DbViewer
                 VerticalAlignment = VerticalAlignment.Center,
                 TextAlignment = TextAlignment.Center,
                 TextWrapping = TextWrapping.NoWrap,
-                TextTrimming = TextTrimming.CharacterEllipsis
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                Margin = new Thickness(6, 6, 6, 6)
             };
 
-            border.Child = textBlock;
+            rootGrid.Children.Add(textBlock);
+
+            border.Child = rootGrid;
 
             return border;
         }
@@ -1932,44 +2615,62 @@ namespace DbViewer
             Border border = new()
             {
                 MinHeight = 50,
-                Width = 1120,
+                Width = 930,
                 Background = LogStyleMapper.GetRowFill(rowTag),
                 BorderBrush = LogStyleMapper.GridLineBrush(),
                 BorderThickness = new Thickness(0, 0, 0, 1),
-                Padding = new Thickness(0)
+                Padding = new Thickness(0),
+                SnapsToDevicePixels = true
             };
 
-            Grid grid = new()
+            /*
+             * 빨간줄 Overlay용 Grid
+             * 이 Grid는 컬럼이 없어야 한다.
+             * 그래야 빨간줄이 행 전체 폭으로 쭉 깔린다.
+             */
+            Grid rootGrid = new()
             {
-                Width = 1120
+                SnapsToDevicePixels = true
             };
 
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(90) }); // 구분
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(70) });  // 상태
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(280) }); // 위치
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(380) }); // 내용
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(110) }); // 패킷
+            /*
+             * 실제 내용용 Grid
+             * 여기만 컬럼을 가진다.
+             */
+            Grid contentGrid = new()
+            {
+                Width = 930,
+                SnapsToDevicePixels = true
+            };
+
+            contentGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(90) });   // 구분
+            contentGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(70) });   // 상태
+            contentGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(280) });  // 위치
+            contentGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(380) });  // 내용
+            contentGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(110) });  // 패킷
 
             Brush textBrush = LogStyleMapper.GetRowText(rowTag);
 
-            AddFixedWidthCell(grid, row.Type, 0, true, textBrush);
-            AddFixedWidthCell(grid, row.Action, 1, true, textBrush);
-            AddFixedWidthCell(grid, row.Section, 2, false, textBrush);
-            AddScrollableContentCell(grid, row.Contents, 3, textBrush, badgeKeys);
-            AddFixedWidthCell(grid, row.Packet, 4, false, textBrush, HorizontalAlignment.Left);
+            AddFixedWidthCell(contentGrid, row.Type, 0, true, textBrush);
+            AddFixedWidthCell(contentGrid, row.Action, 1, true, textBrush);
+            AddFixedWidthCell(contentGrid, row.Section, 2, false, textBrush);
+            AddScrollableContentCell(contentGrid, row.Contents, 3, textBrush, badgeKeys);
+            AddFixedWidthCell(contentGrid, row.Packet, 4, false, textBrush, HorizontalAlignment.Left);
 
-            border.Child = grid;
+            rootGrid.Children.Add(contentGrid);
+
+            border.Child = rootGrid;
 
             return border;
         }
 
         private void AddFixedWidthCell(
-    Grid grid,
-    string text,
-    int column,
-    bool center,
-    Brush textBrush,
-    HorizontalAlignment? forceAlignment = null)
+            Grid grid,
+            string text,
+            int column,
+            bool center,
+            Brush textBrush,
+            HorizontalAlignment? forceAlignment = null)
         {
             Border cellBorder = new()
             {

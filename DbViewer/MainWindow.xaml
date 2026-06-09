@@ -596,7 +596,7 @@
                                                Margin="0,0,6,0"
                                                VerticalAlignment="Center"/>
                                     <TextBlock x:Name="ModeToggleText"
-                                               Text="이동 모드"
+                                               Text="필터 모드"
                                                FontSize="14"
                                                FontWeight="Bold"
                                                Foreground="#23395D"
@@ -773,7 +773,7 @@
                                                    VerticalAlignment="Center"/>
 
                                         <TextBlock Grid.Column="4"
-                                                   Text="패킷"
+                                                   Text="코드"
                                                    FontWeight="Bold"
                                                    Foreground="#102044"
                                                    HorizontalAlignment="Center"
@@ -974,6 +974,131 @@
                           BorderBrush="Transparent"
                           BorderThickness="0"/>
             </Viewbox>
+        </Border>
+        <Border x:Name="HistoryOpenChoiceOverlay"
+        Background="#66000000"
+        Visibility="Collapsed"
+        Panel.ZIndex="2000">
+
+            <Grid>
+                <Border Width="420"
+                Height="300"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                CornerRadius="24"
+                Background="#F8FFFFFF"
+                BorderBrush="#E6FFFFFF"
+                BorderThickness="1"
+                Padding="24"
+                Effect="{StaticResource RealGlassButtonShadow}">
+
+                    <StackPanel VerticalAlignment="Center">
+
+                        <TextBlock Text="이력 파일 열기"
+                           FontSize="24"
+                           FontWeight="Bold"
+                           Foreground="#0E2448"
+                           HorizontalAlignment="Center"
+                           Margin="0,0,0,8"/>
+
+                        <TextBlock Text="이력을 여는 방법을 선택하세요."
+                           FontSize="14"
+                           FontWeight="SemiBold"
+                           Foreground="#506078"
+                           HorizontalAlignment="Center"
+                           Margin="0,0,0,22"/>
+
+                        <!-- 파일 선택 -->
+                        <Border x:Name="ManualHistoryFileButton"
+                        Height="54"
+                        CornerRadius="17"
+                        Margin="0,0,0,12"
+                        BorderBrush="{StaticResource RealGlassStrokeBrush}"
+                        BorderThickness="1"
+                        Effect="{StaticResource RealGlassButtonShadow}"
+                        Cursor="Hand">
+
+                            <Grid>
+                                <Border CornerRadius="17"
+                                Background="{StaticResource RealGlassButtonFillBrush}"/>
+
+                                <Border CornerRadius="17"
+                                Margin="1"
+                                BorderBrush="{StaticResource RealGlassInnerStrokeBrush}"
+                                BorderThickness="1"/>
+
+                                <StackPanel Orientation="Horizontal"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center">
+                                    <TextBlock Text="📁"
+                                       FontSize="18"
+                                       Margin="0,0,8,0"
+                                       VerticalAlignment="Center"/>
+
+                                    <TextBlock Text="파일 선택"
+                                       FontSize="16"
+                                       FontWeight="Bold"
+                                       Foreground="#102044"
+                                       VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <!-- 파일 자동 탐색 -->
+                        <Border x:Name="AutoHistoryFileButton"
+                        Height="54"
+                        CornerRadius="17"
+                        Margin="0,0,0,12"
+                        BorderBrush="{StaticResource RealGlassStrokeBrush}"
+                        BorderThickness="1"
+                        Effect="{StaticResource RealGlassPrimaryShadow}"
+                        Cursor="Hand">
+
+                            <Grid>
+                                <Border CornerRadius="17"
+                                Background="{StaticResource RealGlassPrimaryFillBrush}"/>
+
+                                <Border CornerRadius="17"
+                                Margin="1"
+                                BorderBrush="#40FFFFFF"
+                                BorderThickness="1"/>
+
+                                <StackPanel Orientation="Horizontal"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center">
+                                    <TextBlock Text="🔍"
+                                       FontSize="18"
+                                       Margin="0,0,8,0"
+                                       VerticalAlignment="Center"/>
+
+                                    <TextBlock Text="파일 자동 탐색"
+                                       FontSize="16"
+                                       FontWeight="Bold"
+                                       Foreground="White"
+                                       VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <!-- 취소 -->
+                        <Border x:Name="CancelHistoryOpenButton"
+                        Height="46"
+                        CornerRadius="15"
+                        Background="#ECF2F8"
+                        BorderBrush="#D8E4F0"
+                        BorderThickness="1"
+                        Cursor="Hand">
+
+                            <TextBlock Text="취소"
+                               FontSize="15"
+                               FontWeight="Bold"
+                               Foreground="#506078"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"/>
+                        </Border>
+                    </StackPanel>
+                </Border>
+            </Grid>
         </Border>
     </Grid>
 </Window>
