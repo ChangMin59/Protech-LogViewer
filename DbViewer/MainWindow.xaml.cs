@@ -34,6 +34,9 @@ namespace DbViewer
         private CancellationTokenSource? _renderCts;
         private CancellationTokenSource? _countCts;
         private CancellationTokenSource? _loadCts;
+        private bool _isHorizontalDragging = false;
+        private Point _dragStartPoint;
+        private double _dragStartHorizontalOffset;
 
         private readonly object _categoryCacheLock = new();
 
@@ -114,6 +117,10 @@ namespace DbViewer
             AllPeriodButton.MouseLeftButtonUp += async (_, _) => await ApplyAllPeriodAsync();
             SevenDaysButton.MouseLeftButtonUp += async (_, _) => await ApplyRecentDaysAsync(7);
             ThirtyDaysButton.MouseLeftButtonUp += async (_, _) => await ApplyRecentDaysAsync(30);
+            LogScrollViewer.PreviewMouseLeftButtonDown += LogScrollViewer_PreviewMouseLeftButtonDown;
+            LogScrollViewer.PreviewMouseMove += LogScrollViewer_PreviewMouseMove;
+            LogScrollViewer.PreviewMouseLeftButtonUp += LogScrollViewer_PreviewMouseLeftButtonUp;
+            LogScrollViewer.MouseLeave += LogScrollViewer_MouseLeave;
 
             StartDateButton.MouseLeftButtonUp += (_, e) =>
             {
@@ -237,6 +244,8 @@ namespace DbViewer
                     await SearchFirstPageAsync();
                 }
             };
+
+            LogScrollViewer.ScrollChanged += LogScrollViewer_ScrollChanged;
         }
 
         private void InitializeDefaultText()
@@ -254,7 +263,10 @@ namespace DbViewer
 
             PageSizeText.Text = $"{_pageSize:N0}건";
 
+            FixedTimeRowsPanel.Children.Clear();
             LogRowsPanel.Children.Clear();
+
+            FixedTimeRowsPanel.Children.Add(CreateFixedEmptyCell());
             LogRowsPanel.Children.Add(CreateEmptyRow("이력 파일을 선택하세요."));
 
             UpdatePageSizeDropdownStyle();
@@ -345,7 +357,10 @@ namespace DbViewer
                 UpdateDateArrowVisibility();
                 DateCalendarDropdown.Visibility = Visibility.Collapsed;
 
+                FixedTimeRowsPanel.Children.Clear();
                 LogRowsPanel.Children.Clear();
+
+                FixedTimeRowsPanel.Children.Add(CreateFixedEmptyCell());
                 LogRowsPanel.Children.Add(CreateEmptyRow("이력 파일을 정상적으로 읽을 수 없습니다."));
 
                 MessageBox.Show(
@@ -646,7 +661,10 @@ namespace DbViewer
                 UpdateDateArrowVisibility();
                 DateCalendarDropdown.Visibility = Visibility.Collapsed;
 
+                FixedTimeRowsPanel.Children.Clear();
                 LogRowsPanel.Children.Clear();
+
+                FixedTimeRowsPanel.Children.Add(CreateFixedEmptyCell());
                 LogRowsPanel.Children.Add(CreateEmptyRow("이력 파일을 선택하세요."));
                 return;
             }
@@ -876,6 +894,84 @@ namespace DbViewer
             }
         }
 
+        private void LogScrollViewer_ScrollChanged(object sender, ScrollChangedEventArgs e)
+        {
+            /*
+             * 오른쪽 로그 영역을 세로로 내리면
+             * 왼쪽 고정 발생시간도 같은 위치로 내려간다.
+             */
+            FixedTimeScrollViewer.ScrollToVerticalOffset(e.VerticalOffset);
+
+            /*
+             * 오른쪽 로그 영역을 터치로 좌우 이동하면
+             * 오른쪽 헤더도 같은 위치로 이동한다.
+             */
+            HeaderHorizontalScrollViewer.ScrollToHorizontalOffset(e.HorizontalOffset);
+        }
+
+        private void LogScrollViewer_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            _isHorizontalDragging = true;
+            _dragStartPoint = e.GetPosition(LogScrollViewer);
+            _dragStartHorizontalOffset = LogScrollViewer.HorizontalOffset;
+
+            LogScrollViewer.CaptureMouse();
+            e.Handled = true;
+        }
+
+        private void LogScrollViewer_PreviewMouseMove(object sender, MouseEventArgs e)
+        {
+            if (!_isHorizontalDragging)
+            {
+                return;
+            }
+
+            Point currentPoint = e.GetPosition(LogScrollViewer);
+            double deltaX = currentPoint.X - _dragStartPoint.X;
+
+            /*
+             * 마우스를 왼쪽으로 끌면 오른쪽 내용, 즉 패킷 쪽이 보이게 한다.
+             */
+            LogScrollViewer.ScrollToHorizontalOffset(_dragStartHorizontalOffset - deltaX);
+
+            e.Handled = true;
+        }
+
+        private void LogScrollViewer_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+        {
+            EndHorizontalDrag();
+            e.Handled = true;
+        }
+
+        private void LogScrollViewer_MouseLeave(object sender, MouseEventArgs e)
+        {
+            if (_isHorizontalDragging && e.LeftButton != MouseButtonState.Pressed)
+            {
+                EndHorizontalDrag();
+            }
+        }
+
+        private void EndHorizontalDrag()
+        {
+            _isHorizontalDragging = false;
+
+            if (LogScrollViewer.IsMouseCaptured)
+            {
+                LogScrollViewer.ReleaseMouseCapture();
+            }
+        }
+
+        private void LogScrollViewer_ManipulationBoundaryFeedback(
+            object sender,
+            ManipulationBoundaryFeedbackEventArgs e)
+        {
+            /*
+             * 터치로 끝까지 밀었을 때 WPF 기본 튕김 효과를 막는다.
+             * 키오스크/터치 모니터에서 화면 흔들림을 줄인다.
+             */
+            e.Handled = true;
+        }
+
         private async Task LoadCurrentPageAsync(bool showLoading = true)
         {
             if (_repository == null)
@@ -1098,24 +1194,23 @@ namespace DbViewer
 
             CancellationToken token = _renderCts.Token;
 
+            FixedTimeRowsPanel.Children.Clear();
             LogRowsPanel.Children.Clear();
+
+            FixedTimeScrollViewer.ScrollToTop();
             LogScrollViewer.ScrollToTop();
+            LogScrollViewer.ScrollToHorizontalOffset(0);
+            HeaderHorizontalScrollViewer.ScrollToHorizontalOffset(0);
 
             RebuildPaginationButtons();
 
             if (rows.Count == 0)
             {
+                FixedTimeRowsPanel.Children.Add(CreateFixedEmptyCell());
                 LogRowsPanel.Children.Add(CreateEmptyRow("표시할 이력 내용이 없습니다."));
                 return;
             }
 
-            /*
-             * 핵심:
-             * 100,000건은 WPF UIElement를 100,000개 만드는 작업이다.
-             * batch가 20이어도 UI 스레드가 계속 바쁘면 카테고리 숫자 갱신이 밀린다.
-             *
-             * 그래서 표시 건수가 클수록 batch를 더 줄인다.
-             */
             int batchSize;
 
             if (rows.Count >= 100000)
@@ -1143,29 +1238,18 @@ namespace DbViewer
             {
                 for (int start = 0; start < rows.Count; start += batchSize)
                 {
-                    if (token.IsCancellationRequested)
-                    {
-                        return;
-                    }
+                    token.ThrowIfCancellationRequested();
 
                     int end = Math.Min(start + batchSize, rows.Count);
 
                     for (int i = start; i < end; i++)
                     {
-                        LogRowsPanel.Children.Add(CreateLogRow(rows[i], i));
+                        FixedTimeRowsPanel.Children.Add(CreateFixedTimeCell(rows[i], i));
+                        LogRowsPanel.Children.Add(CreateScrollableLogRow(rows[i], i));
                     }
 
-                    /*
-                     * Background만 주면 렌더링 작업이 계속 이어질 수 있다.
-                     * ApplicationIdle까지 내려서 카운트 갱신, 클릭, 레이아웃 계산이 끼어들 시간을 준다.
-                     */
                     await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
 
-                    /*
-                     * 100,000건에서는 1ms도 부족하다.
-                     * 너무 빠르게 Add를 반복하면 카운트 갱신이 화면에 반영되기 전에
-                     * 다음 행 렌더링이 계속 들어간다.
-                     */
                     if (rows.Count >= 100000)
                     {
                         await Task.Delay(8, token);
@@ -1715,7 +1799,10 @@ namespace DbViewer
 
         private void SetLoadingState(string message)
         {
+            FixedTimeRowsPanel.Children.Clear();
             LogRowsPanel.Children.Clear();
+
+            FixedTimeRowsPanel.Children.Add(CreateFixedEmptyCell());
             LogRowsPanel.Children.Add(CreateEmptyRow(message));
 
             RebuildPaginationButtons();
@@ -1744,7 +1831,52 @@ namespace DbViewer
             return border;
         }
 
-        private UIElement CreateLogRow(LogRow row, int index)
+        private UIElement CreateFixedEmptyCell()
+        {
+            Border border = new()
+            {
+                Height = 58,
+                Background = new SolidColorBrush(Color.FromRgb(255, 255, 255)),
+                BorderBrush = LogStyleMapper.GridLineBrush(),
+                BorderThickness = new Thickness(0, 0, 1, 1)
+            };
+
+            return border;
+        }
+
+        private UIElement CreateFixedTimeCell(LogRow row, int index)
+        {
+            string rowTag = LogClassifier.ClassifyRowTag(row, index);
+
+            Border border = new()
+            {
+                MinHeight = 50,
+                Background = LogStyleMapper.GetRowFill(rowTag),
+                BorderBrush = LogStyleMapper.GridLineBrush(),
+                BorderThickness = new Thickness(0, 0, 1, 1),
+                Padding = new Thickness(6, 6, 6, 6)
+            };
+
+            TextBlock textBlock = new()
+            {
+                Text = row.DTime,
+                ToolTip = row.DTime,
+                FontSize = 13,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = LogStyleMapper.GetRowText(rowTag),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextAlignment = TextAlignment.Center,
+                TextWrapping = TextWrapping.NoWrap,
+                TextTrimming = TextTrimming.CharacterEllipsis
+            };
+
+            border.Child = textBlock;
+
+            return border;
+        }
+
+        private UIElement CreateScrollableLogRow(LogRow row, int index)
         {
             string rowTag = LogClassifier.ClassifyRowTag(row, index);
             List<string> badgeKeys = LogClassifier.GetBadgeKeys(row, rowTag);
@@ -1752,54 +1884,56 @@ namespace DbViewer
             Border border = new()
             {
                 MinHeight = 50,
+                Width = 1120,
                 Background = LogStyleMapper.GetRowFill(rowTag),
                 BorderBrush = LogStyleMapper.GridLineBrush(),
                 BorderThickness = new Thickness(0, 0, 0, 1),
                 Padding = new Thickness(0)
             };
 
-            Grid grid = new();
+            Grid grid = new()
+            {
+                Width = 1120
+            };
 
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.5, GridUnitType.Star) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.0, GridUnitType.Star) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.8, GridUnitType.Star) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.8, GridUnitType.Star) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(2.4, GridUnitType.Star) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.0, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(90) }); // 구분
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(70) });  // 상태
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(280) }); // 위치
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(380) }); // 내용
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(110) }); // 패킷
 
             Brush textBrush = LogStyleMapper.GetRowText(rowTag);
 
-            AddCell(grid, row.DTime, 0, true, textBrush);
-            AddCell(grid, row.Type, 1, true, textBrush);
-            AddCell(grid, row.Action, 2, true, textBrush);
-            AddCell(grid, row.Section, 3, false, textBrush);
-            AddContentCell(grid, row.Contents, 4, textBrush, badgeKeys);
-            AddCell(grid, row.Packet, 5, false, textBrush, HorizontalAlignment.Right);
+            AddFixedWidthCell(grid, row.Type, 0, true, textBrush);
+            AddFixedWidthCell(grid, row.Action, 1, true, textBrush);
+            AddFixedWidthCell(grid, row.Section, 2, false, textBrush);
+            AddScrollableContentCell(grid, row.Contents, 3, textBrush, badgeKeys);
+            AddFixedWidthCell(grid, row.Packet, 4, false, textBrush, HorizontalAlignment.Left);
 
             border.Child = grid;
+
             return border;
         }
 
-        private void AddCell(
-            Grid grid,
-            string text,
-            int column,
-            bool center,
-            Brush textBrush,
-            HorizontalAlignment? forceAlignment = null)
+        private void AddFixedWidthCell(
+    Grid grid,
+    string text,
+    int column,
+    bool center,
+    Brush textBrush,
+    HorizontalAlignment? forceAlignment = null)
         {
             Border cellBorder = new()
             {
                 BorderBrush = LogStyleMapper.GridLineBrush(),
                 BorderThickness = new Thickness(0, 0, 1, 0),
-                Padding = column == 5
-                    ? new Thickness(8, 6, 14, 6)
-                    : new Thickness(8, 6, 8, 6)
+                Padding = new Thickness(5, 6, 5, 6)
             };
 
             TextBlock textBlock = new()
             {
                 Text = text,
+                ToolTip = text,
                 FontSize = 13,
                 FontWeight = FontWeights.SemiBold,
                 Foreground = textBrush,
@@ -1826,7 +1960,7 @@ namespace DbViewer
             grid.Children.Add(cellBorder);
         }
 
-        private void AddContentCell(
+        private void AddScrollableContentCell(
             Grid grid,
             string text,
             int column,
@@ -1837,7 +1971,7 @@ namespace DbViewer
             {
                 BorderBrush = LogStyleMapper.GridLineBrush(),
                 BorderThickness = new Thickness(0, 0, 1, 0),
-                Padding = new Thickness(8, 6, 8, 6)
+                Padding = new Thickness(5, 6, 5, 6)
             };
 
             StackPanel panel = new()
@@ -1885,6 +2019,7 @@ namespace DbViewer
             TextBlock contentText = new()
             {
                 Text = text,
+                ToolTip = text,
                 FontSize = 13,
                 FontWeight = FontWeights.SemiBold,
                 Foreground = textBrush,

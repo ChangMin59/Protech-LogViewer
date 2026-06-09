@@ -689,42 +689,124 @@
                             ClipToBounds="True">
 
                         <Grid>
+                            <Grid.ColumnDefinitions>
+                                <!-- 발생시간 고정 컬럼 -->
+                                <ColumnDefinition Width="168"/>
+
+                                <!-- 구분/상태/위치/내용/패킷 터치 스크롤 영역 -->
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="44"/>
                                 <RowDefinition Height="*"/>
                             </Grid.RowDefinitions>
 
+                            <!-- 왼쪽 고정 헤더: 발생시간 -->
                             <Border Grid.Row="0"
+                                    Grid.Column="0"
                                     Background="{StaticResource TableHeaderBrush}"
-                                    CornerRadius="20,20,0,0"
+                                    CornerRadius="20,0,0,0"
                                     BorderBrush="#DDE8F2"
-                                    BorderThickness="0,0,0,1">
+                                    BorderThickness="0,0,1,1">
 
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="1.5*"/>
-                                        <ColumnDefinition Width="1.0*"/>
-                                        <ColumnDefinition Width="0.8*"/>
-                                        <ColumnDefinition Width="1.8*"/>
-                                        <ColumnDefinition Width="2.4*"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-
-                                    <TextBlock Grid.Column="0" Text="발생시간" FontWeight="Bold" Foreground="#102044" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                    <TextBlock Grid.Column="1" Text="구분" FontWeight="Bold" Foreground="#102044" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                    <TextBlock Grid.Column="2" Text="상태" FontWeight="Bold" Foreground="#102044" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                    <TextBlock Grid.Column="3" Text="위치" FontWeight="Bold" Foreground="#102044" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                    <TextBlock Grid.Column="4" Text="내용" FontWeight="Bold" Foreground="#102044" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                    <TextBlock Grid.Column="5" Text="패킷" FontWeight="Bold" Foreground="#102044" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                </Grid>
+                                <TextBlock Text="발생시간"
+                                           FontWeight="Bold"
+                                           Foreground="#102044"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"/>
                             </Border>
 
+                            <!-- 오른쪽 헤더: 본문 가로 이동과 같이 움직임 -->
+                            <Border Grid.Row="0"
+                                    Grid.Column="1"
+                                    Background="{StaticResource TableHeaderBrush}"
+                                    CornerRadius="0,20,0,0"
+                                    BorderBrush="#DDE8F2"
+                                    BorderThickness="0,0,0,1"
+                                    ClipToBounds="True">
+
+                                <ScrollViewer x:Name="HeaderHorizontalScrollViewer"
+                                              HorizontalScrollBarVisibility="Hidden"
+                                              VerticalScrollBarVisibility="Disabled"
+                                              Background="Transparent"
+                                              PanningMode="HorizontalOnly">
+
+                                    <Grid x:Name="ScrollableHeaderGrid"
+                                          Width="930"
+                                          Height="44">
+
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="90"/>
+                                            <ColumnDefinition Width="70"/>
+                                            <ColumnDefinition Width="280"/>
+                                            <ColumnDefinition Width="380"/>
+                                            <ColumnDefinition Width="110"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <TextBlock Grid.Column="0"
+                                                   Text="구분"
+                                                   FontWeight="Bold"
+                                                   Foreground="#102044"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center"/>
+
+                                        <TextBlock Grid.Column="1"
+                                                   Text="상태"
+                                                   FontWeight="Bold"
+                                                   Foreground="#102044"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center"/>
+
+                                        <TextBlock Grid.Column="2"
+                                                   Text="위치"
+                                                   FontWeight="Bold"
+                                                   Foreground="#102044"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center"/>
+
+                                        <TextBlock Grid.Column="3"
+                                                   Text="내용"
+                                                   FontWeight="Bold"
+                                                   Foreground="#102044"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center"/>
+
+                                        <TextBlock Grid.Column="4"
+                                                   Text="패킷"
+                                                   FontWeight="Bold"
+                                                   Foreground="#102044"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center"/>
+                                    </Grid>
+                                </ScrollViewer>
+                            </Border>
+
+                            <!-- 왼쪽 고정 발생시간 목록 -->
+                            <ScrollViewer x:Name="FixedTimeScrollViewer"
+                                          Grid.Row="1"
+                                          Grid.Column="0"
+                                          VerticalScrollBarVisibility="Hidden"
+                                          HorizontalScrollBarVisibility="Disabled"
+                                          Background="Transparent"
+                                          Focusable="False">
+
+                                <StackPanel x:Name="FixedTimeRowsPanel"/>
+                            </ScrollViewer>
+
+                            <!-- 오른쪽 터치 스크롤 목록 -->
                             <ScrollViewer x:Name="LogScrollViewer"
                                           Grid.Row="1"
+                                          Grid.Column="1"
                                           VerticalScrollBarVisibility="Auto"
-                                          HorizontalScrollBarVisibility="Disabled"
-                                          Background="Transparent">
-                                <StackPanel x:Name="LogRowsPanel"/>
+                                          HorizontalScrollBarVisibility="Hidden"
+                                          Background="Transparent"
+                                          PanningMode="Both"
+                                          CanContentScroll="False"
+                                          ManipulationBoundaryFeedback="LogScrollViewer_ManipulationBoundaryFeedback">
+
+                                <StackPanel x:Name="LogRowsPanel"
+                                            Width="930"/>
                             </ScrollViewer>
                         </Grid>
                     </Border>
