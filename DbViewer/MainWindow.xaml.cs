@@ -484,13 +484,7 @@ namespace DbViewer
 
             if (!File.Exists(sourceDbPath))
             {
-                MessageBox.Show(
-                    $"Windows 폴더에서 복구할 Log.db 파일을 찾을 수 없습니다.\n\n" +
-                    $"확인 경로:\n{sourceDbPath}",
-                    "이력 DB 복구",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Warning
-                );
+                ShowRecoverySourceMissingMessage();
 
                 return;
             }
@@ -503,7 +497,7 @@ namespace DbViewer
                 _selectedCategories.Clear();
                 UpdateCategoryCardActiveStates();
 
-                SetLoadingState("Windows 폴더의 Log.db를 복구하는 중입니다...");
+                SetLoadingState("이력 파일을 복구하는 중입니다...");
 
                 DbRecoveryResult result = await Task.Run(() =>
                     DbRecovery.Recover(sourceDbPath)
@@ -511,44 +505,16 @@ namespace DbViewer
 
                 if (!result.Success)
                 {
-                    FixedTimeRowsPanel.Children.Clear();
-                    LogRowsPanel.Children.Clear();
-
-                    FixedTimeRowsPanel.Children.Add(CreateFixedEmptyCell());
-                    LogRowsPanel.Children.Add(CreateEmptyRow("이력 DB 복구에 실패했습니다."));
-
-                    MessageBox.Show(
-                        $"이력 DB 복구에 실패했습니다.\n\n" +
-                        $"원본 DB:\n{result.SourceDbPath}\n\n" +
-                        $"복구 DB:\n{result.RecoveredDbPath}\n\n" +
-                        $"원본 Log 개수: {FormatRecoveryCount(result.OriginalLogCount)}\n" +
-                        $"복구 Log 개수: {FormatRecoveryCount(result.RecoveredLogCount)}\n" +
-                        $"무결성 검사: {result.IntegrityResult}\n\n" +
-                        $"오류 내용:\n{result.Message}",
-                        "이력 DB 복구 실패",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Warning
-                    );
+                    ShowRecoveryFailedState(MessageBoxImage.Warning, result.Message);
 
                     return;
                 }
 
-                MessageBoxResult openResult = MessageBox.Show(
-                    $"이력 DB 복구가 완료되었습니다.\n\n" +
-                    $"원본 DB:\n{result.SourceDbPath}\n\n" +
-                    $"복구 DB:\n{result.RecoveredDbPath}\n\n" +
-                    $"원본 Log 개수: {FormatRecoveryCount(result.OriginalLogCount)}\n" +
-                    $"복구 Log 개수: {FormatRecoveryCount(result.RecoveredLogCount)}\n" +
-                    $"무결성 검사: {result.IntegrityResult}\n\n" +
-                    $"복구된 DB를 바로 열까요?",
-                    "이력 DB 복구 완료",
-                    MessageBoxButton.YesNo,
-                    MessageBoxImage.Information
-                );
+                MessageBoxResult openResult = ShowRecoverySuccessMessage();
 
                 if (openResult == MessageBoxResult.Yes)
                 {
-                    await OpenHistoryFileByPathAsync(result.RecoveredDbPath);
+                    await OpenHistoryFileByPathAsync(result.RecoveredDbPath, "이력 복구");
                     return;
                 }
 
@@ -558,30 +524,154 @@ namespace DbViewer
                 FixedTimeRowsPanel.Children.Add(CreateFixedEmptyCell());
                 LogRowsPanel.Children.Add(CreateEmptyRow(""));
             }
-            catch (Exception ex)
+            catch
             {
-                FixedTimeRowsPanel.Children.Clear();
-                LogRowsPanel.Children.Clear();
-
-                FixedTimeRowsPanel.Children.Add(CreateFixedEmptyCell());
-                LogRowsPanel.Children.Add(CreateEmptyRow("이력 DB 복구에 실패했습니다."));
-
-                MessageBox.Show(
-                    $"이력 DB 복구에 실패했습니다.\n\n" +
-                    $"확인 경로:\n{sourceDbPath}\n\n" +
-                    $"오류 내용:\n{ex.Message}",
-                    "이력 DB 복구 오류",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error
-                );
+                ShowRecoveryFailedState(MessageBoxImage.Error);
             }
         }
 
-        private static string FormatRecoveryCount(int count)
+        private void ResetOpenedHistoryState(string emptyRowMessage)
         {
-            return count < 0
-                ? "확인 불가"
-                : count.ToString("N0");
+            _repository = null;
+            _currentRows.Clear();
+
+            _selectedCategories.Clear();
+            UpdateCategoryCardActiveStates();
+
+            ResetCategoryCountText();
+            ClearQueryCaches();
+
+            StartDateText.Text = "";
+            EndDateText.Text = "";
+            _dbStartDate = null;
+            _dbEndDate = null;
+            UpdateDateArrowVisibility();
+            DateCalendarDropdown.Visibility = Visibility.Collapsed;
+
+            FixedTimeRowsPanel.Children.Clear();
+            LogRowsPanel.Children.Clear();
+
+            FixedTimeRowsPanel.Children.Add(CreateFixedEmptyCell());
+            LogRowsPanel.Children.Add(CreateEmptyRow(emptyRowMessage));
+        }
+
+        private static void ShowRecoverySourceMissingMessage()
+        {
+            MessageBox.Show(
+                "복구할 이력 파일을 찾을 수 없습니다.",
+                "이력 복구",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning
+            );
+        }
+
+        private void ShowRecoveryFailedState(MessageBoxImage icon, string detailMessage = "")
+        {
+            FixedTimeRowsPanel.Children.Clear();
+            LogRowsPanel.Children.Clear();
+
+            FixedTimeRowsPanel.Children.Add(CreateFixedEmptyCell());
+            LogRowsPanel.Children.Add(CreateEmptyRow("이력 파일 복구에 실패했습니다."));
+
+            string message = "이력 파일 복구에 실패했습니다.";
+
+            if (!string.IsNullOrWhiteSpace(detailMessage))
+            {
+                message += "\n\n" + detailMessage;
+            }
+
+            MessageBox.Show(
+                message,
+                "이력 복구",
+                MessageBoxButton.OK,
+                icon
+            );
+        }
+
+        private static MessageBoxResult ShowRecoverySuccessMessage()
+        {
+            return MessageBox.Show(
+                "이력 파일 복구가 완료되었습니다.\n\n" +
+                "복구된 이력 파일을 바로 열까요?",
+                "이력 복구",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Information
+            );
+        }
+
+        private static void ShowInvalidDbHistoryFileMessage(string title)
+        {
+            MessageBox.Show(
+                "잘못된 이력 파일입니다.\n\n" +
+                "가능한 원인:\n" +
+                "- 이력 파일이 아님\n"+
+                "- 파일 손상\n",
+                title,
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning
+            );
+        }
+
+        private static void ShowInvalidTxtHistoryFileMessage(string title)
+        {
+            MessageBox.Show(
+                "잘못된 텍스트 이력 파일입니다.\n\n" +
+                "가능한 원인:\n" +
+                "- 이력 TXT 파일이 아님\n",
+                title,
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning
+            );
+        }
+
+        private static void ShowHistoryFileNotFoundMessage(string title)
+        {
+            MessageBox.Show(
+                "이력 파일을 찾을 수 없습니다.",
+                title,
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning
+            );
+        }
+
+        private static void ShowUnsupportedHistoryFileMessage(string title)
+        {
+            MessageBox.Show(
+                "지원하지 않는 이력 파일 형식입니다.\n\nDB 파일(.db) 또는 텍스트 이력 파일(.txt)을 선택하세요.",
+                title,
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning
+            );
+        }
+
+        private static void ShowMoveTargetMissingMessage(string categoryName)
+        {
+            MessageBox.Show(
+                $"현재 화면 아래쪽의 다음 {categoryName} 로그가 없습니다.",
+                "이동 모드",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information
+            );
+        }
+
+        private static void ShowInvalidDateRangeMessage(string message)
+        {
+            MessageBox.Show(
+                message,
+                "기간 조회",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning
+            );
+        }
+
+        private static void ShowLoadLogsFailedMessage()
+        {
+            MessageBox.Show(
+                "이력 내용을 불러오는 중 오류가 발생했습니다.",
+                "조회 오류",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error
+            );
         }
 
         private async Task OpenAutoHistoryFileAsync()
@@ -593,38 +683,27 @@ namespace DbViewer
 
             if (!File.Exists(autoDbPath))
             {
-                MessageBox.Show(
-                    $"Windows 폴더에서 Log.db 파일을 찾을 수 없습니다.\n\n" +
-                    $"확인 경로:\n{autoDbPath}",
-                    "파일 자동 탐색",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Warning
-                );
+                ShowHistoryFileNotFoundMessage("파일 자동 탐색");
 
                 return;
             }
 
-            await OpenHistoryFileByPathAsync(autoDbPath);
+            await OpenHistoryFileByPathAsync(autoDbPath, "파일 자동 탐색");
         }
 
-        private async Task OpenHistoryFileByPathAsync(string dbPath)
+        private async Task OpenHistoryFileByPathAsync(string dbPath, string errorTitle = "파일 찾기")
         {
             string extension = Path.GetExtension(dbPath).ToLowerInvariant();
 
             if (extension == ".txt")
             {
-                await OpenTxtHistoryFileByPathAsync(dbPath);
+                await OpenTxtHistoryFileByPathAsync(dbPath, errorTitle);
                 return;
             }
 
             if (extension != ".db")
             {
-                MessageBox.Show(
-                    "지원하지 않는 이력 파일 형식입니다.\n\nDB 파일(.db) 또는 텍스트 이력 파일(.txt)을 선택하세요.",
-                    "이력 보기",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Warning
-                );
+                ShowUnsupportedHistoryFileMessage(errorTitle);
 
                 return;
             }
@@ -653,41 +732,8 @@ namespace DbViewer
 
                 if (!result.Success)
                 {
-                    _repository = null;
-                    _currentRows.Clear();
-
-                    _selectedCategories.Clear();
-                    UpdateCategoryCardActiveStates();
-
-                    ResetCategoryCountText();
-                    ClearQueryCaches();
-
-                    StartDateText.Text = "";
-                    EndDateText.Text = "";
-                    _dbStartDate = null;
-                    _dbEndDate = null;
-                    UpdateDateArrowVisibility();
-                    DateCalendarDropdown.Visibility = Visibility.Collapsed;
-
-                    FixedTimeRowsPanel.Children.Clear();
-                    LogRowsPanel.Children.Clear();
-
-                    FixedTimeRowsPanel.Children.Add(CreateFixedEmptyCell());
-                    LogRowsPanel.Children.Add(CreateEmptyRow("잘못된 이력 파일입니다."));
-
-                    MessageBox.Show(
-                        $"잘못된 이력 파일입니다.\n\n" +
-                        $"선택 경로:\n{dbPath}\n\n" +
-                        $"가능한 원인:\n" +
-                        $"- DB 파일 손상\n" +
-                        $"- Log 테이블 없음\n" +
-                        $"- SQLite DB가 아닌 파일 선택\n" +
-                        $"- 기록 중인 DB 파일을 직접 선택\n\n" +
-                        $"오류 내용:\n{result.ErrorMessage}",
-                        "이력 보기 오류",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Warning
-                    );
+                    ResetOpenedHistoryState("잘못된 DB 이력 파일입니다.");
+                    ShowInvalidDbHistoryFileMessage(errorTitle);
 
                     return;
                 }
@@ -718,44 +764,10 @@ namespace DbViewer
 
                 await LoadCurrentPageAsync(showLoading: false);
             }
-            catch (Exception ex)
+            catch
             {
-                _repository = null;
-                _currentRows.Clear();
-
-                _selectedCategories.Clear();
-                UpdateCategoryCardActiveStates();
-
-                ResetCategoryCountText();
-                ClearQueryCaches();
-
-                StartDateText.Text = "";
-                EndDateText.Text = "";
-                _dbStartDate = null;
-                _dbEndDate = null;
-                UpdateDateArrowVisibility();
-                DateCalendarDropdown.Visibility = Visibility.Collapsed;
-
-                FixedTimeRowsPanel.Children.Clear();
-                LogRowsPanel.Children.Clear();
-
-                FixedTimeRowsPanel.Children.Add(CreateFixedEmptyCell());
-                LogRowsPanel.Children.Add(CreateEmptyRow("잘못된 이력 파일입니다."));
-
-                MessageBox.Show(
-                    $"잘못된 이력 파일입니다.\n\n" +
-                    $"선택 경로:\n{dbPath}\n\n" +
-                    $"가능한 원인:\n" +
-                    $"- DB 파일 손상\n" +
-                    $"- SQLite DB가 아닌 파일 선택\n" +
-                    $"- Log 테이블 없음\n" +
-                    $"- Log 테이블 컬럼 구조 불일치\n" +
-                    $"- Windows 폴더 접근 권한 문제\n\n" +
-                    $"오류 내용:\n{ex.Message}",
-                    "이력 보기 오류",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Warning
-                );
+                ResetOpenedHistoryState("잘못된 DB 이력 파일입니다.");
+                ShowInvalidDbHistoryFileMessage(errorTitle);
             }
         }
 
@@ -930,7 +942,7 @@ namespace DbViewer
 
             return columns;
         }
-        private async Task OpenTxtHistoryFileByPathAsync(string txtPath)
+        private async Task OpenTxtHistoryFileByPathAsync(string txtPath, string errorTitle)
         {
             try
             {
@@ -951,41 +963,8 @@ namespace DbViewer
 
                 if (!convertResult.Success)
                 {
-                    _repository = null;
-                    _currentRows.Clear();
-
-                    _selectedCategories.Clear();
-                    UpdateCategoryCardActiveStates();
-
-                    ResetCategoryCountText();
-                    ClearQueryCaches();
-
-                    StartDateText.Text = "";
-                    EndDateText.Text = "";
-                    _dbStartDate = null;
-                    _dbEndDate = null;
-                    UpdateDateArrowVisibility();
-                    DateCalendarDropdown.Visibility = Visibility.Collapsed;
-
-                    FixedTimeRowsPanel.Children.Clear();
-                    LogRowsPanel.Children.Clear();
-
-                    FixedTimeRowsPanel.Children.Add(CreateFixedEmptyCell());
-                    LogRowsPanel.Children.Add(CreateEmptyRow("잘못된 텍스트 이력 파일입니다."));
-
-                    MessageBox.Show(
-                        $"잘못된 텍스트 이력 파일입니다.\n\n" +
-                        $"선택 경로:\n{txtPath}\n\n" +
-                        $"가능한 원인:\n" +
-                        $"- 이력 TXT 파일이 아님\n" +
-                        $"- 날짜/시간 형식이 없음\n" +
-                        $"- 컬럼 간격이 맞지 않음\n" +
-                        $"- 파일 내용이 비어 있음\n\n" +
-                        $"오류 내용:\n{convertResult.ErrorMessage}",
-                        "텍스트 이력 보기 오류",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Warning
-                    );
+                    ResetOpenedHistoryState("잘못된 텍스트 이력 파일입니다.");
+                    ShowInvalidTxtHistoryFileMessage(errorTitle);
 
                     return;
                 }
@@ -1000,41 +979,8 @@ namespace DbViewer
 
                 if (!result.Success)
                 {
-                    _repository = null;
-                    _currentRows.Clear();
-
-                    _selectedCategories.Clear();
-                    UpdateCategoryCardActiveStates();
-
-                    ResetCategoryCountText();
-                    ClearQueryCaches();
-
-                    StartDateText.Text = "";
-                    EndDateText.Text = "";
-                    _dbStartDate = null;
-                    _dbEndDate = null;
-                    UpdateDateArrowVisibility();
-                    DateCalendarDropdown.Visibility = Visibility.Collapsed;
-
-                    FixedTimeRowsPanel.Children.Clear();
-                    LogRowsPanel.Children.Clear();
-
-                    FixedTimeRowsPanel.Children.Add(CreateFixedEmptyCell());
-                    LogRowsPanel.Children.Add(CreateEmptyRow("잘못된 텍스트 이력 파일입니다."));
-
-                    MessageBox.Show(
-                        $"잘못된 텍스트 이력 파일입니다.\n\n" +
-                        $"선택 경로:\n{txtPath}\n\n" +
-                        $"가능한 원인:\n" +
-                        $"- 지원하지 않는 텍스트 형식\n" +
-                        $"- 날짜/시간 형식 누락\n" +
-                        $"- 변환된 DB에 Log 테이블 없음\n" +
-                        $"- 변환 중 데이터 구조 오류\n\n" +
-                        $"오류 내용:\n{result.ErrorMessage}",
-                        "텍스트 이력 보기 오류",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Warning
-                    );
+                    ResetOpenedHistoryState("잘못된 텍스트 이력 파일입니다.");
+                    ShowInvalidTxtHistoryFileMessage(errorTitle);
 
                     return;
                 }
@@ -1065,43 +1011,10 @@ namespace DbViewer
 
                 await LoadCurrentPageAsync(showLoading: false);
             }
-            catch (Exception ex)
+            catch
             {
-                _repository = null;
-                _currentRows.Clear();
-
-                _selectedCategories.Clear();
-                UpdateCategoryCardActiveStates();
-
-                ResetCategoryCountText();
-                ClearQueryCaches();
-
-                StartDateText.Text = "";
-                EndDateText.Text = "";
-                _dbStartDate = null;
-                _dbEndDate = null;
-                UpdateDateArrowVisibility();
-                DateCalendarDropdown.Visibility = Visibility.Collapsed;
-
-                FixedTimeRowsPanel.Children.Clear();
-                LogRowsPanel.Children.Clear();
-
-                FixedTimeRowsPanel.Children.Add(CreateFixedEmptyCell());
-                LogRowsPanel.Children.Add(CreateEmptyRow("잘못된 텍스트 이력 파일입니다."));
-
-                MessageBox.Show(
-                    $"잘못된 텍스트 이력 파일입니다.\n\n" +
-                    $"선택 경로:\n{txtPath}\n\n" +
-                    $"가능한 원인:\n" +
-                    $"- 이력 TXT 파일이 아님\n" +
-                    $"- 날짜/시간 형식 누락\n" +
-                    $"- 컬럼 간격 깨짐\n" +
-                    $"- 한글 인코딩 문제\n\n" +
-                    $"오류 내용:\n{ex.Message}",
-                    "텍스트 이력 보기 오류",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Warning
-                );
+                ResetOpenedHistoryState("잘못된 텍스트 이력 파일입니다.");
+                ShowInvalidTxtHistoryFileMessage(errorTitle);
             }
         }
 
@@ -1608,12 +1521,7 @@ namespace DbViewer
 
                 if (result == null)
                 {
-                    MessageBox.Show(
-                        $"현재 화면 아래쪽의 다음 {categoryName} 로그가 없습니다.",
-                        "이동 모드",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Information
-                    );
+                    ShowMoveTargetMissingMessage(categoryName);
 
                     return;
                 }
@@ -1737,7 +1645,7 @@ namespace DbViewer
                 Margin = new Thickness(0),
                 IsHitTestVisible = false,
                 SnapsToDevicePixels = true,
-                Tag = "MoveTargetLine"
+                Tag = MoveTargetLineTag
             };
 
             Panel.SetZIndex(line, 999);
@@ -2072,12 +1980,7 @@ namespace DbViewer
 
             if (!IsValidDate(startDate) || !IsValidDate(endDate))
             {
-                MessageBox.Show(
-                    "시작일과 종료일을 확인하세요.",
-                    "기간 조회",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Warning
-                );
+                ShowInvalidDateRangeMessage("시작일과 종료일을 확인하세요.");
                 return;
             }
 
@@ -2086,12 +1989,7 @@ namespace DbViewer
 
             if (start > end)
             {
-                MessageBox.Show(
-                    "시작일은 종료일보다 늦을 수 없습니다.",
-                    "기간 조회",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Warning
-                );
+                ShowInvalidDateRangeMessage("시작일은 종료일보다 늦을 수 없습니다.");
                 return;
             }
 
@@ -2616,7 +2514,7 @@ namespace DbViewer
             catch (OperationCanceledException)
             {
             }
-            catch (Exception ex)
+            catch
             {
                 _highlightedRowIndexInPage = null;
                 FixedTimeRowsPanel.Children.Clear();
@@ -2625,12 +2523,7 @@ namespace DbViewer
                 LogRowsPanel.Children.Add(CreateEmptyRow("이력 내용을 불러오는 중 오류가 발생했습니다."));
                 RebuildPaginationButtons();
 
-                MessageBox.Show(
-                    $"이력 내용을 불러오는 중 오류가 발생했습니다.\n\n{ex.Message}",
-                    "조회 오류",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error
-                );
+                ShowLoadLogsFailedMessage();
             }
         }
 
