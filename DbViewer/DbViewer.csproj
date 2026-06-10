@@ -6,10 +6,13 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <ApplicationIcon>Assets\Icons\icon.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
 
   <ItemGroup>
     <None Remove="Assets\Images\Background.png" />
+    <None Remove="Assets\Icons\icon.ico" />
     <None Remove="sqllite3\sqlite3.exe" />
   </ItemGroup>
 
@@ -20,6 +23,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Resource Include="Assets\Icons\icon.ico" />
     <Resource Include="Assets\Images\Background.png" />
   </ItemGroup>
 

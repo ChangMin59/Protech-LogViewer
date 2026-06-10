@@ -3,6 +3,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace DbViewer.Services
@@ -14,8 +15,14 @@ namespace DbViewer.Services
         public string RecoveredDbPath { get; init; } = "";
         public string RecoverySqlPath { get; init; } = "";
         public string IntegrityResult { get; init; } = "";
+        public bool SourceLogReadable { get; init; }
         public int OriginalLogCount { get; init; } = -1;
         public int RecoveredLogCount { get; init; } = -1;
+        public List<string> RecoveredTables { get; init; } = new();
+        public int? EstimatedLoss =>
+            OriginalLogCount < 0 || RecoveredLogCount < 0
+                ? null
+                : Math.Max(OriginalLogCount - RecoveredLogCount, 0);
         public string Message { get; init; } = "";
     }
 
@@ -48,37 +55,32 @@ namespace DbViewer.Services
                 );
             }
 
+            string tempRecoveryDir = "";
+
             try
             {
                 string sourceDir = Path.GetDirectoryName(sourceDbPath) ?? "";
-                string recoveryRootDir = Path.Combine(sourceDir, "sqlliteDB");
-                string recoveryDir = CreateTimestampRecoveryDirectory(recoveryRootDir);
+                string backupDir = CreateTimestampBackupDirectory(sourceDir);
+                tempRecoveryDir = PrepareTempRecoveryDirectory(sourceDir);
 
-                Directory.CreateDirectory(recoveryDir);
+                string backupDbPath = Path.Combine(backupDir, "Log.db");
+                string recoverySqlPath = Path.Combine(tempRecoveryDir, "recovery.sql");
+                string recoveredDbPath = Path.Combine(tempRecoveryDir, "recovery.db");
 
-                string backupDbPath = Path.Combine(recoveryDir, "Log.db");
-                string recoverySqlPath = Path.Combine(recoveryDir, "recovery.sql");
-                string recoveredDbPath = Path.Combine(recoveryDir, "Log_recovered.db");
                 /*
-                 * 1. 기존 C:\Windows\Log.db를 백업 폴더로 먼저 복사한다.
-                 * 최종 백업 위치 예:
-                 * C:\Windows\sqlliteDB\20260610_113045\Log.db
+                 * 원본 C:\Windows\Log.db는 먼저 sqllite_DB\날짜시간\Log.db로 복사한다.
+                 * 복구와 검증은 임시 db복구 폴더에서 진행하고, 검증 성공 후에만
+                 * recovery.db를 C:\Windows\Log.db로 덮어쓴다.
                  */
                 File.Copy(sourceDbPath, backupDbPath, overwrite: false);
 
-                /*
-                 * WAL/SHM 파일이 있으면 같이 백업한다.
-                 * SQLite가 WAL 모드로 동작 중이면 Log.db-wal 안에 최신 데이터가 남아 있을 수 있다.
-                 */
-                CopySidecarFileIfExists(sourceDbPath, backupDbPath, "-wal");
-                CopySidecarFileIfExists(sourceDbPath, backupDbPath, "-shm");
-
                 int originalCount = TryCountLogRows(backupDbPath);
+                bool sourceLogReadable = originalCount >= 0;
 
                 /*
-                 * 2. 파이썬 검증 코드와 동일하게 sqlite3.exe .recover로 SQL을 추출한다.
+                 * 2. 백업본 DB를 대상으로 sqlite3.exe .recover로 SQL을 추출한다.
                  *
-                 * sqlite3.exe 백업DB .recover > recovery.sql
+                 * sqlite3.exe 백업DB .recover > sqllite_DB\db복구\recovery.sql
                  */
                 bool recoverCommandSuccess = RunRecoverCommand(
                     sqliteExePath,
@@ -97,6 +99,7 @@ namespace DbViewer.Services
                         SourceDbPath = sourceDbPath,
                         RecoveredDbPath = recoveredDbPath,
                         RecoverySqlPath = recoverySqlPath,
+                        SourceLogReadable = sourceLogReadable,
                         OriginalLogCount = originalCount,
                         RecoveredLogCount = -1,
                         IntegrityResult = "",
@@ -105,12 +108,9 @@ namespace DbViewer.Services
                 }
 
                 /*
-                 * 3. 파이썬 검증 코드와 동일하게 sqlite3.exe에 SQL 파일을 입력해서 새 DB를 만든다.
+                 * 3. sqlite3.exe에 SQL 파일을 입력해서 새 복구 DB를 만든다.
                  *
-                 * sqlite3.exe Log_recovered.db < recovery.sql
-                 *
-                 * 기존 문제:
-                 * Microsoft.Data.Sqlite의 ExecuteNonQuery()로 .recover SQL 전체를 실행하려고 해서 실패 가능성이 컸다.
+                 * sqlite3.exe recovery.db < recovery.sql
                  */
                 bool createDbSuccess = CreateRecoveredDatabaseBySqliteCli(
                     sqliteExePath,
@@ -129,6 +129,7 @@ namespace DbViewer.Services
                         SourceDbPath = sourceDbPath,
                         RecoveredDbPath = recoveredDbPath,
                         RecoverySqlPath = recoverySqlPath,
+                        SourceLogReadable = sourceLogReadable,
                         OriginalLogCount = originalCount,
                         RecoveredLogCount = -1,
                         IntegrityResult = "",
@@ -141,6 +142,7 @@ namespace DbViewer.Services
                  */
                 string integrityResult = RunIntegrityCheck(recoveredDbPath);
                 int recoveredCount = TryCountLogRows(recoveredDbPath);
+                List<string> recoveredTables = InspectTables(recoveredDbPath);
 
                 bool success =
                     File.Exists(recoveredDbPath) &&
@@ -149,6 +151,8 @@ namespace DbViewer.Services
 
                 if (!success)
                 {
+                    DeleteFileIfExists(recoveredDbPath);
+
                     return new DbRecoveryResult
                     {
                         Success = false,
@@ -156,39 +160,17 @@ namespace DbViewer.Services
                         RecoveredDbPath = recoveredDbPath,
                         RecoverySqlPath = recoverySqlPath,
                         IntegrityResult = integrityResult,
+                        SourceLogReadable = sourceLogReadable,
                         OriginalLogCount = originalCount,
                         RecoveredLogCount = recoveredCount,
+                        RecoveredTables = recoveredTables,
                         Message =
                             "복구 DB 파일은 생성되었지만 무결성 확인에 실패했습니다.\n\n" +
                             $"무결성 검사 결과: {integrityResult}"
                     };
                 }
 
-                /*
-                 * 5. 검증된 복구 DB를 원래 위치 C:\Windows\Log.db로 교체한다.
-                 *
-                 * 기존 DB는 이미 recoveryDir\Log.db로 백업되어 있다.
-                 */
-                if (!ReplaceSourceDatabase(sourceDbPath, recoveredDbPath, recoveryDir, out string replaceError))
-                {
-                    return new DbRecoveryResult
-                    {
-                        Success = false,
-                        SourceDbPath = sourceDbPath,
-                        RecoveredDbPath = recoveredDbPath,
-                        RecoverySqlPath = recoverySqlPath,
-                        IntegrityResult = integrityResult,
-                        OriginalLogCount = originalCount,
-                        RecoveredLogCount = recoveredCount,
-                        Message = replaceError
-                    };
-                }
-
-                /*
-                 * 6. 원본 위치의 WAL/SHM은 복구 DB 기준에서는 필요 없으므로 삭제한다.
-                 */
-                DeleteSidecarFileIfExists(sourceDbPath, "-wal");
-                DeleteSidecarFileIfExists(sourceDbPath, "-shm");
+                File.Copy(recoveredDbPath, sourceDbPath, overwrite: true);
 
                 return new DbRecoveryResult
                 {
@@ -197,12 +179,14 @@ namespace DbViewer.Services
                     RecoveredDbPath = sourceDbPath,
                     RecoverySqlPath = recoverySqlPath,
                     IntegrityResult = integrityResult,
+                    SourceLogReadable = sourceLogReadable,
                     OriginalLogCount = originalCount,
                     RecoveredLogCount = recoveredCount,
+                    RecoveredTables = recoveredTables,
                     Message =
                         "DB 복구가 완료되었습니다.\n\n" +
-                        $"기존 DB 백업 위치:\n{backupDbPath}\n\n" +
-                        $"복구된 DB 적용 위치:\n{sourceDbPath}"
+                        $"원본 백업 위치:\n{backupDbPath}\n\n" +
+                        $"복구 DB 위치:\n{sourceDbPath}"
                 };
             }
             catch (UnauthorizedAccessException)
@@ -220,6 +204,13 @@ namespace DbViewer.Services
                     ex.Message
                 );
             }
+            finally
+            {
+                if (!string.IsNullOrWhiteSpace(tempRecoveryDir))
+                {
+                    DeleteDirectoryIfExists(tempRecoveryDir);
+                }
+            }
         }
 
         private static DbRecoveryResult Failure(string sourceDbPath, string message)
@@ -231,28 +222,49 @@ namespace DbViewer.Services
                 RecoveredDbPath = "",
                 RecoverySqlPath = "",
                 IntegrityResult = "",
+                SourceLogReadable = false,
                 OriginalLogCount = -1,
                 RecoveredLogCount = -1,
+                RecoveredTables = new List<string>(),
                 Message = message
             };
         }
 
-        private static string CreateTimestampRecoveryDirectory(string recoveryRootDir)
+        private static string CreateTimestampBackupDirectory(string sourceDir)
         {
+            string recoveryRootDir = Path.Combine(sourceDir, "sqllite_DB");
             Directory.CreateDirectory(recoveryRootDir);
 
             string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-            string recoveryDir = Path.Combine(recoveryRootDir, timestamp);
 
-            if (!Directory.Exists(recoveryDir))
+            for (int index = 0; index < 1000; index++)
             {
+                string suffix = index == 0
+                    ? ""
+                    : $"_{index}";
+
+                string recoveryDir = Path.Combine(recoveryRootDir, $"{timestamp}{suffix}");
+
+                if (Directory.Exists(recoveryDir))
+                {
+                    continue;
+                }
+
+                Directory.CreateDirectory(recoveryDir);
                 return recoveryDir;
             }
 
-            return Path.Combine(
-                recoveryRootDir,
-                DateTime.Now.ToString("yyyyMMdd_HHmmss_fff")
-            );
+            throw new InvalidOperationException("복구 폴더를 만들 수 없습니다.");
+        }
+
+        private static string PrepareTempRecoveryDirectory(string sourceDir)
+        {
+            string tempRecoveryDir = Path.Combine(sourceDir, "sqllite_DB", "db복구");
+
+            DeleteDirectoryIfExists(tempRecoveryDir);
+            Directory.CreateDirectory(tempRecoveryDir);
+
+            return tempRecoveryDir;
         }
 
         private static string FindSqliteExePath()
@@ -291,20 +303,6 @@ namespace DbViewer.Services
             }
 
             return Path.GetFullPath(candidatePaths[0]);
-        }
-
-        private static void CopySidecarFileIfExists(
-            string originalDbPath,
-            string copiedDbPath,
-            string suffix)
-        {
-            string originalSidecarPath = originalDbPath + suffix;
-            string copiedSidecarPath = copiedDbPath + suffix;
-
-            if (File.Exists(originalSidecarPath))
-            {
-                File.Copy(originalSidecarPath, copiedSidecarPath, overwrite: true);
-            }
         }
 
         private static bool RunRecoverCommand(
@@ -349,22 +347,23 @@ namespace DbViewer.Services
                            FileShare.Read))
                 {
                     copyOutputTask = process.StandardOutput.BaseStream.CopyToAsync(sqlStream);
-
-                    string error = process.StandardError.ReadToEnd();
+                    Task<string> errorTask = process.StandardError.ReadToEndAsync();
 
                     bool exited = process.WaitForExit(ProcessTimeoutMilliseconds);
-
-                    copyOutputTask.GetAwaiter().GetResult();
 
                     if (!exited)
                     {
                         TryKillProcess(process);
+                        TryWaitForExit(process);
 
                         errorMessage =
                             "sqlite3 .recover 실행 시간이 초과되었습니다.";
 
                         return false;
                     }
+
+                    copyOutputTask.GetAwaiter().GetResult();
+                    string error = errorTask.GetAwaiter().GetResult();
 
                     if (process.ExitCode != 0)
                     {
@@ -430,7 +429,7 @@ namespace DbViewer.Services
                 ProcessStartInfo startInfo = new()
                 {
                     FileName = sqliteExePath,
-                    Arguments = $"\"{recoveredDbPath}\"",
+                    Arguments = $"-cmd \".dbconfig defensive off\" \"{recoveredDbPath}\"",
                     UseShellExecute = false,
                     RedirectStandardInput = true,
                     RedirectStandardError = true,
@@ -448,31 +447,27 @@ namespace DbViewer.Services
 
                 process.Start();
 
-                using (FileStream sqlStream = new(
-                           recoverySqlPath,
-                           FileMode.Open,
-                           FileAccess.Read,
-                           FileShare.Read))
-                {
-                    sqlStream.CopyTo(process.StandardInput.BaseStream);
-                }
-
+                WriteRecoverySqlToStandardInput(recoverySqlPath, process.StandardInput);
                 process.StandardInput.Close();
 
-                string output = process.StandardOutput.ReadToEnd();
-                string error = process.StandardError.ReadToEnd();
+                Task<string> outputTask = process.StandardOutput.ReadToEndAsync();
+                Task<string> errorTask = process.StandardError.ReadToEndAsync();
 
                 bool exited = process.WaitForExit(ProcessTimeoutMilliseconds);
 
                 if (!exited)
                 {
                     TryKillProcess(process);
+                    TryWaitForExit(process);
 
                     errorMessage =
                         "복구 SQL을 새 DB로 변환하는 시간이 초과되었습니다.";
 
                     return false;
                 }
+
+                string output = outputTask.GetAwaiter().GetResult();
+                string error = errorTask.GetAwaiter().GetResult();
 
                 if (process.ExitCode != 0)
                 {
@@ -505,58 +500,24 @@ namespace DbViewer.Services
             }
         }
 
-        private static bool ReplaceSourceDatabase(
-            string sourceDbPath,
-            string recoveredDbPath,
-            string recoveryDir,
-            out string errorMessage)
+        private static void WriteRecoverySqlToStandardInput(
+            string recoverySqlPath,
+            StreamWriter standardInput)
         {
-            errorMessage = "";
+            using StreamReader reader = new(
+                recoverySqlPath,
+                Encoding.UTF8,
+                detectEncodingFromByteOrderMarks: true
+            );
 
-            try
+            while (reader.ReadLine() is string line)
             {
-                if (!File.Exists(recoveredDbPath))
+                if (line.StartsWith(".", StringComparison.Ordinal))
                 {
-                    errorMessage =
-                        "복구된 DB 파일을 찾을 수 없습니다.";
-
-                    return false;
+                    continue;
                 }
 
-                string replacementDbPath = Path.Combine(recoveryDir, "Log_replacement.db");
-
-                DeleteFileIfExists(replacementDbPath);
-
-                File.Copy(recoveredDbPath, replacementDbPath, overwrite: false);
-
-                /*
-                 * File.Replace는 원본 파일을 교체하는 Windows API 방식이다.
-                 * 실패할 경우를 대비해 File.Copy overwrite로 한 번 더 시도한다.
-                 */
-                try
-                {
-                    File.Replace(
-                        replacementDbPath,
-                        sourceDbPath,
-                        destinationBackupFileName: null
-                    );
-                }
-                catch
-                {
-                    File.Copy(recoveredDbPath, sourceDbPath, overwrite: true);
-                    DeleteFileIfExists(replacementDbPath);
-                }
-
-                return true;
-            }
-            catch (Exception ex)
-            {
-                errorMessage =
-                    "복구 DB를 최종 위치로 복사하는 중 오류가 발생했습니다.\n\n" +
-                    ex.Message + "\n\n" +
-                    "C:\\Windows\\Log.db를 교체하려면 프로그램을 관리자 권한으로 실행해야 할 수 있습니다.";
-
-                return false;
+                standardInput.WriteLine(line);
             }
         }
 
@@ -564,7 +525,7 @@ namespace DbViewer.Services
         {
             try
             {
-                using SqliteConnection connection = new($"Data Source={dbPath}");
+                using SqliteConnection connection = CreateReadOnlyConnection(dbPath);
                 connection.Open();
 
                 using SqliteCommand command = connection.CreateCommand();
@@ -584,7 +545,7 @@ namespace DbViewer.Services
         {
             try
             {
-                using SqliteConnection connection = new($"Data Source={dbPath}");
+                using SqliteConnection connection = CreateReadOnlyConnection(dbPath);
                 connection.Open();
 
                 using SqliteCommand command = connection.CreateCommand();
@@ -605,9 +566,55 @@ namespace DbViewer.Services
             }
         }
 
-        private static void DeleteSidecarFileIfExists(string dbPath, string suffix)
+        private static List<string> InspectTables(string dbPath)
         {
-            DeleteFileIfExists(dbPath + suffix);
+            try
+            {
+                using SqliteConnection connection = CreateReadOnlyConnection(dbPath);
+                connection.Open();
+
+                using SqliteCommand command = connection.CreateCommand();
+                command.CommandText = """
+                    SELECT name
+                    FROM sqlite_master
+                    WHERE type = 'table'
+                      AND name NOT LIKE 'sqlite_%'
+                    ORDER BY name;
+                """;
+
+                List<string> tables = new();
+
+                using SqliteDataReader reader = command.ExecuteReader();
+
+                while (reader.Read())
+                {
+                    string name = reader.IsDBNull(0)
+                        ? ""
+                        : reader.GetString(0);
+
+                    if (!string.IsNullOrWhiteSpace(name))
+                    {
+                        tables.Add(name);
+                    }
+                }
+
+                return tables;
+            }
+            catch
+            {
+                return new List<string>();
+            }
+        }
+
+        private static SqliteConnection CreateReadOnlyConnection(string dbPath)
+        {
+            SqliteConnectionStringBuilder builder = new()
+            {
+                DataSource = dbPath,
+                Mode = SqliteOpenMode.ReadOnly
+            };
+
+            return new SqliteConnection(builder.ToString());
         }
 
         private static void DeleteFileIfExists(string path)
@@ -625,6 +632,71 @@ namespace DbViewer.Services
             }
         }
 
+        private static void DeleteDirectoryIfExists(string path)
+        {
+            if (!Directory.Exists(path))
+            {
+                return;
+            }
+
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+
+            for (int attempt = 0; attempt < 10; attempt++)
+            {
+                try
+                {
+                    NormalizeDirectoryAttributes(path);
+                    Directory.Delete(path, recursive: true);
+                    return;
+                }
+                catch
+                {
+                    Thread.Sleep(200);
+                }
+            }
+        }
+
+        private static void NormalizeDirectoryAttributes(string path)
+        {
+            if (!Directory.Exists(path))
+            {
+                return;
+            }
+
+            DirectoryInfo directory = new(path);
+
+            foreach (FileInfo file in directory.EnumerateFiles("*", SearchOption.AllDirectories))
+            {
+                try
+                {
+                    file.Attributes = FileAttributes.Normal;
+                }
+                catch
+                {
+                }
+            }
+
+            foreach (DirectoryInfo childDirectory in directory.EnumerateDirectories("*", SearchOption.AllDirectories))
+            {
+                try
+                {
+                    childDirectory.Attributes = FileAttributes.Normal;
+                }
+                catch
+                {
+                }
+            }
+
+            try
+            {
+                directory.Attributes = FileAttributes.Normal;
+            }
+            catch
+            {
+            }
+        }
+
         private static void TryKillProcess(Process process)
         {
             try
@@ -637,6 +709,18 @@ namespace DbViewer.Services
             catch
             {
                 // 프로세스 종료 실패는 별도 처리하지 않는다.
+            }
+        }
+
+        private static void TryWaitForExit(Process process)
+        {
+            try
+            {
+                process.WaitForExit(5000);
+            }
+            catch
+            {
+                // 프로세스 종료 대기 실패는 별도 처리하지 않는다.
             }
         }
     }

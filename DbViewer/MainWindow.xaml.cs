@@ -87,10 +87,13 @@ namespace DbViewer
         private int _countJobVersion = 0;
         private bool _isMoveMode = false;
         private bool _isMoveNavigationRunning = false;
+        private bool _isRecoveryRunning = false;
         private int? _highlightedRowIndexInPage = null;
+        private DateTime _lastPointerActionAt = DateTime.MinValue;
 
         private const double LogRowVisualHeight = 50.0;
         private const string MoveTargetLineTag = "MoveTargetLine";
+        private const int PointerActionDebounceMilliseconds = 450;
 
         private readonly Dictionary<string, string> _categoryDisplayNames = new()
         {
@@ -144,142 +147,39 @@ namespace DbViewer
         {
             HistoryViewButton.MouseLeftButtonUp += (_, _) => ShowHistoryOpenChoice();
 
-            HistoryRecoverButton.MouseLeftButtonUp += async (_, e) =>
+            AttachPointerAction(HistoryRecoverButton, RecoverHistoryFileAsync);
+            AttachPointerAction(ManualHistoryFileButton, async () =>
             {
-                e.Handled = true;
-                await RecoverHistoryFileAsync();
-            };
-
-            HistoryRecoverButton.TouchDown += async (_, e) =>
-            {
-                e.Handled = true;
-                await RecoverHistoryFileAsync();
-            };
-
-            ManualHistoryFileButton.MouseLeftButtonUp += async (_, e) =>
-            {
-                e.Handled = true;
                 HistoryOpenChoiceOverlay.Visibility = Visibility.Collapsed;
                 await OpenHistoryFileAsync();
-            };
-
-            AutoHistoryFileButton.MouseLeftButtonUp += async (_, e) =>
+            });
+            AttachPointerAction(AutoHistoryFileButton, async () =>
             {
-                e.Handled = true;
                 HistoryOpenChoiceOverlay.Visibility = Visibility.Collapsed;
                 await OpenAutoHistoryFileAsync();
-            };
-
-            CancelHistoryOpenButton.MouseLeftButtonUp += (_, e) =>
+            });
+            AttachPointerAction(CancelHistoryOpenButton, () =>
             {
-                e.Handled = true;
                 HistoryOpenChoiceOverlay.Visibility = Visibility.Collapsed;
-            };
-
-            ManualHistoryFileButton.TouchDown += async (_, e) =>
-            {
-                e.Handled = true;
-                HistoryOpenChoiceOverlay.Visibility = Visibility.Collapsed;
-                await OpenHistoryFileAsync();
-            };
-
-            AutoHistoryFileButton.TouchDown += async (_, e) =>
-            {
-                e.Handled = true;
-                HistoryOpenChoiceOverlay.Visibility = Visibility.Collapsed;
-                await OpenAutoHistoryFileAsync();
-            };
-
-            CancelHistoryOpenButton.TouchDown += (_, e) =>
-            {
-                e.Handled = true;
-                HistoryOpenChoiceOverlay.Visibility = Visibility.Collapsed;
-            };
-
-            ModeToggleButton.MouseLeftButtonUp += async (_, e) =>
-            {
-                e.Handled = true;
-                await ToggleMoveModeAsync();
-            };
-
-            ModeToggleButton.TouchDown += async (_, e) =>
-            {
-                e.Handled = true;
-                await ToggleMoveModeAsync();
-            };
+            });
+            AttachPointerAction(ModeToggleButton, ToggleMoveModeAsync);
 
             TotalLogButton.MouseLeftButtonUp += async (_, _) => await LoadAllFirstPageAsync();
 
-            FireLogButton.MouseLeftButtonUp += async (_, _) => await HandleCategoryButtonAsync("fire");
-            AlarmLogButton.MouseLeftButtonUp += async (_, _) => await HandleCategoryButtonAsync("alarm");
-            RelayErrorLogButton.MouseLeftButtonUp += async (_, _) => await HandleCategoryButtonAsync("relay_fault");
-            AnErrorLogButton.MouseLeftButtonUp += async (_, _) => await HandleCategoryButtonAsync("an_fault");
-            LineBreakLogButton.MouseLeftButtonUp += async (_, _) => await HandleCategoryButtonAsync("line_fault");
-            OutputLogButton.MouseLeftButtonUp += async (_, _) => await HandleCategoryButtonAsync("output");
-            MccLogButton.MouseLeftButtonUp += async (_, _) => await HandleCategoryButtonAsync("mcc");
-            EtcLogButton.MouseLeftButtonUp += async (_, _) => await HandleCategoryButtonAsync("other");
-
-            FireLogButton.TouchDown += async (_, e) =>
-            {
-                e.Handled = true;
-                await HandleCategoryButtonAsync("fire");
-            };
-
-            AlarmLogButton.TouchDown += async (_, e) =>
-            {
-                e.Handled = true;
-                await HandleCategoryButtonAsync("alarm");
-            };
-
-            RelayErrorLogButton.TouchDown += async (_, e) =>
-            {
-                e.Handled = true;
-                await HandleCategoryButtonAsync("relay_fault");
-            };
-
-            AnErrorLogButton.TouchDown += async (_, e) =>
-            {
-                e.Handled = true;
-                await HandleCategoryButtonAsync("an_fault");
-            };
-
-            LineBreakLogButton.TouchDown += async (_, e) =>
-            {
-                e.Handled = true;
-                await HandleCategoryButtonAsync("line_fault");
-            };
-
-            OutputLogButton.TouchDown += async (_, e) =>
-            {
-                e.Handled = true;
-                await HandleCategoryButtonAsync("output");
-            };
-
-            MccLogButton.TouchDown += async (_, e) =>
-            {
-                e.Handled = true;
-                await HandleCategoryButtonAsync("mcc");
-            };
-
-            EtcLogButton.TouchDown += async (_, e) =>
-            {
-                e.Handled = true;
-                await HandleCategoryButtonAsync("other");
-            };
+            AttachCategoryButton(FireLogButton, "fire");
+            AttachCategoryButton(AlarmLogButton, "alarm");
+            AttachCategoryButton(RelayErrorLogButton, "relay_fault");
+            AttachCategoryButton(AnErrorLogButton, "an_fault");
+            AttachCategoryButton(LineBreakLogButton, "line_fault");
+            AttachCategoryButton(OutputLogButton, "output");
+            AttachCategoryButton(MccLogButton, "mcc");
+            AttachCategoryButton(EtcLogButton, "other");
 
             SearchButton.MouseLeftButtonUp += async (_, _) => await SearchFirstPageAsync();
 
-            SearchClearButton.MouseLeftButtonUp += async (_, e) =>
-            {
-                e.Handled = true;
-                await ClearSearchKeywordAndReloadAllAsync();
-            };
-
-            SearchClearButton.TouchDown += async (_, e) =>
-            {
-                e.Handled = true;
-                await ClearSearchKeywordAndReloadAllAsync();
-            };
+            AttachPointerAction(SearchClearButton, ClearSearchKeywordAndReloadAllAsync);
+            AttachPointerAction(Keyboard, RestartTouchKeyboardAsync);
+            AttachPointerAction(FileSaveButton, SaveCurrentLogsToPrintHtmlAsync);
 
             PeriodSearchButton.MouseLeftButtonUp += async (_, _) => await LoadDateFirstPageAsync();
             AllPeriodButton.MouseLeftButtonUp += async (_, _) => await ApplyAllPeriodAsync();
@@ -290,106 +190,20 @@ namespace DbViewer
             LogScrollViewer.PreviewMouseLeftButtonUp += LogScrollViewer_PreviewMouseLeftButtonUp;
             LogScrollViewer.MouseLeave += LogScrollViewer_MouseLeave;
 
-            StartDateButton.MouseLeftButtonUp += (_, e) =>
-            {
-                e.Handled = true;
-                OpenDateCalendar(StartDateButton, StartDateText);
-            };
-
-            EndDateButton.MouseLeftButtonUp += (_, e) =>
-            {
-                e.Handled = true;
-                OpenDateCalendar(EndDateButton, EndDateText);
-            };
-
-            StartDateButton.TouchDown += (_, e) =>
-            {
-                e.Handled = true;
-                OpenDateCalendar(StartDateButton, StartDateText);
-            };
-
-            EndDateButton.TouchDown += (_, e) =>
-            {
-                e.Handled = true;
-                OpenDateCalendar(EndDateButton, EndDateText);
-            };
+            AttachPointerAction(StartDateButton, () => OpenDateCalendar(StartDateButton, StartDateText));
+            AttachPointerAction(EndDateButton, () => OpenDateCalendar(EndDateButton, EndDateText));
 
             DateCalendar.SelectedDatesChanged += (_, _) =>
             {
                 ApplySelectedDateFromCalendar();
             };
 
-            PageSizeButton.MouseLeftButtonUp += (_, e) =>
-            {
-                TogglePageSizeDropdown();
-                e.Handled = true;
-            };
-
-            PageSizeButton.TouchDown += (_, e) =>
-            {
-                TogglePageSizeDropdown();
-                e.Handled = true;
-            };
-
-            PageSize1000Button.MouseLeftButtonUp += async (_, e) =>
-            {
-                e.Handled = true;
-                await ChangePageSizeAsync(1000);
-            };
-
-            PageSize5000Button.MouseLeftButtonUp += async (_, e) =>
-            {
-                e.Handled = true;
-                await ChangePageSizeAsync(5000);
-            };
-
-            PageSize10000Button.MouseLeftButtonUp += async (_, e) =>
-            {
-                e.Handled = true;
-                await ChangePageSizeAsync(10000);
-            };
-
-            PageSize50000Button.MouseLeftButtonUp += async (_, e) =>
-            {
-                e.Handled = true;
-                await ChangePageSizeAsync(50000);
-            };
-
-            PageSize100000Button.MouseLeftButtonUp += async (_, e) =>
-            {
-                e.Handled = true;
-                await ChangePageSizeAsync(100000);
-            };
-
-            PageSize1000Button.TouchDown += async (_, e) =>
-            {
-                e.Handled = true;
-                await ChangePageSizeAsync(1000);
-            };
-
-            PageSize5000Button.TouchDown += async (_, e) =>
-            {
-                e.Handled = true;
-                await ChangePageSizeAsync(5000);
-            };
-
-            PageSize10000Button.TouchDown += async (_, e) =>
-            {
-                e.Handled = true;
-                await ChangePageSizeAsync(10000);
-            };
-
-            PageSize50000Button.TouchDown += async (_, e) =>
-            {
-                e.Handled = true;
-                await ChangePageSizeAsync(50000);
-            };
-
-            PageSize100000Button.TouchDown += async (_, e) =>
-            {
-                e.Handled = true;
-                await ChangePageSizeAsync(100000);
-            };
+            AttachPointerAction(PageSizeButton, TogglePageSizeDropdown);
+            AttachPageSizeButton(PageSize1000Button, 1000);
+            AttachPageSizeButton(PageSize5000Button, 5000);
+            AttachPageSizeButton(PageSize10000Button, 10000);
+            AttachPageSizeButton(PageSize50000Button, 50000);
+            AttachPageSizeButton(PageSize100000Button, 100000);
 
             PreviewMouseLeftButtonDown += (_, e) =>
             {
@@ -414,6 +228,170 @@ namespace DbViewer
             };
 
             LogScrollViewer.ScrollChanged += LogScrollViewer_ScrollChanged;
+        }
+
+        private void AttachCategoryButton(UIElement button, string category)
+        {
+            AttachPointerAction(
+                button,
+                async () => await HandleCategoryButtonAsync(category),
+                handleMouse: false
+            );
+        }
+
+        private void AttachPageSizeButton(UIElement button, int size)
+        {
+            AttachPointerAction(button, async () => await ChangePageSizeAsync(size));
+        }
+
+        private void AttachPointerAction(
+            UIElement element,
+            Action action,
+            bool handleMouse = true)
+        {
+            element.MouseLeftButtonUp += (_, e) =>
+            {
+                e.Handled = handleMouse;
+                if (ShouldIgnorePointerAction())
+                {
+                    return;
+                }
+
+                action();
+            };
+
+            element.TouchDown += (_, e) =>
+            {
+                e.Handled = true;
+                if (ShouldIgnorePointerAction())
+                {
+                    return;
+                }
+
+                action();
+            };
+        }
+
+        private void AttachPointerAction(
+            UIElement element,
+            Func<Task> action,
+            bool handleMouse = true)
+        {
+            element.MouseLeftButtonUp += async (_, e) =>
+            {
+                e.Handled = handleMouse;
+                if (ShouldIgnorePointerAction())
+                {
+                    return;
+                }
+
+                await action();
+            };
+
+            element.TouchDown += async (_, e) =>
+            {
+                e.Handled = true;
+                if (ShouldIgnorePointerAction())
+                {
+                    return;
+                }
+
+                await action();
+            };
+        }
+
+        private bool ShouldIgnorePointerAction()
+        {
+            DateTime now = DateTime.Now;
+
+            if ((now - _lastPointerActionAt).TotalMilliseconds < PointerActionDebounceMilliseconds)
+            {
+                return true;
+            }
+
+            _lastPointerActionAt = now;
+            return false;
+        }
+
+        private async Task RestartTouchKeyboardAsync()
+        {
+            SearchKeywordTextBox.Focus();
+            SearchKeywordTextBox.CaretIndex = SearchKeywordTextBox.Text.Length;
+
+            await Task.Run(() =>
+            {
+                foreach (Process process in Process.GetProcessesByName("TabTip"))
+                {
+                    try
+                    {
+                        process.Kill(entireProcessTree: true);
+                        process.WaitForExit(1000);
+                    }
+                    catch
+                    {
+                    }
+                    finally
+                    {
+                        process.Dispose();
+                    }
+                }
+            });
+
+            await Task.Delay(250);
+
+            SearchKeywordTextBox.Focus();
+            SearchKeywordTextBox.CaretIndex = SearchKeywordTextBox.Text.Length;
+
+            if (!TryStartTouchKeyboard())
+            {
+                MessageBox.Show(
+                    "윈도우 터치 키보드를 실행할 수 없습니다.",
+                    "키보드 복구",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning
+                );
+            }
+        }
+
+        private static bool TryStartTouchKeyboard()
+        {
+            string tabTipPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.CommonProgramFiles),
+                "Microsoft Shared",
+                "ink",
+                "TabTip.exe"
+            );
+
+            string oskPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.System),
+                "osk.exe"
+            );
+
+            return TryStartProcess(tabTipPath) ||
+                   TryStartProcess(oskPath);
+        }
+
+        private static bool TryStartProcess(string path)
+        {
+            if (!File.Exists(path))
+            {
+                return false;
+            }
+
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = path,
+                    UseShellExecute = true
+                });
+
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
 
@@ -477,6 +455,11 @@ namespace DbViewer
         }
         private async Task RecoverHistoryFileAsync()
         {
+            if (_isRecoveryRunning)
+            {
+                return;
+            }
+
             string sourceDbPath = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.Windows),
                 "Log.db"
@@ -498,10 +481,13 @@ namespace DbViewer
                 UpdateCategoryCardActiveStates();
 
                 SetLoadingState("이력 파일을 복구하는 중입니다...");
+                ShowRecoveryProgressOverlay();
 
                 DbRecoveryResult result = await Task.Run(() =>
                     DbRecovery.Recover(sourceDbPath)
                 );
+
+                HideRecoveryProgressOverlay();
 
                 if (!result.Success)
                 {
@@ -526,8 +512,24 @@ namespace DbViewer
             }
             catch
             {
+                HideRecoveryProgressOverlay();
                 ShowRecoveryFailedState(MessageBoxImage.Error);
             }
+            finally
+            {
+                _isRecoveryRunning = false;
+            }
+        }
+
+        private void ShowRecoveryProgressOverlay()
+        {
+            _isRecoveryRunning = true;
+            HistoryRecoverProgressOverlay.Visibility = Visibility.Visible;
+        }
+
+        private void HideRecoveryProgressOverlay()
+        {
+            HistoryRecoverProgressOverlay.Visibility = Visibility.Collapsed;
         }
 
         private void ResetOpenedHistoryState(string emptyRowMessage)
@@ -1866,11 +1868,16 @@ namespace DbViewer
 
         private List<LogRow> GetSelectedCategoryRowsFromCache()
         {
+            return GetSelectedCategoryRowsFromCache(_selectedCategories);
+        }
+
+        private List<LogRow> GetSelectedCategoryRowsFromCache(IEnumerable<string> selectedCategories)
+        {
             lock (_categoryCacheLock)
             {
                 Dictionary<long, LogRow> uniqueRows = new();
 
-                foreach (string category in _selectedCategories)
+                foreach (string category in selectedCategories)
                 {
                     if (!_categoryCache.ContainsKey(category))
                     {
@@ -1964,6 +1971,172 @@ namespace DbViewer
             SaveBaseQueryState();
 
             await LoadCurrentPageAsync(showLoading: false, resetScroll: true);
+        }
+
+        private async Task SaveCurrentLogsToPrintHtmlAsync()
+        {
+            if (_repository == null)
+            {
+                MessageBox.Show(
+                    "저장할 이력 파일이 없습니다.",
+                    "파일 저장",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information
+                );
+                return;
+            }
+
+            try
+            {
+                ClearMoveTargetHighlight();
+                SetLoadingState("인쇄 파일을 만드는 중입니다...");
+
+                string conditionText = BuildPrintConditionText();
+                string mode = _currentMode;
+                string keyword = _currentKeyword;
+                string startDate = _currentStartDate;
+                string endDate = _currentEndDate;
+                string cacheKey = _activeRowsCacheKey;
+                List<string> selectedCategories = _selectedCategories.ToList();
+
+                List<string> savedPaths = await Task.Run(() =>
+                {
+                    List<LogRow> rows = GetCurrentRowsForPrintExport(
+                        mode,
+                        keyword,
+                        startDate,
+                        endDate,
+                        cacheKey,
+                        selectedCategories
+                    );
+
+                    return PrintHtmlExporter.Export(
+                        rows,
+                        "이력 내용",
+                        conditionText
+                    );
+                });
+
+                await LoadCurrentPageAsync(showLoading: false, resetScroll: false);
+
+                string outputDir = Path.GetDirectoryName(savedPaths.FirstOrDefault() ?? "") ?? "";
+
+                MessageBox.Show(
+                    "이력 인쇄 파일을 저장했습니다.\n\n" +
+                    $"저장 위치:\n{outputDir}\n\n" +
+                    $"생성 파일: {savedPaths.Count:N0}개",
+                    "파일 저장",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information
+                );
+            }
+            catch
+            {
+                await LoadCurrentPageAsync(showLoading: false, resetScroll: false);
+
+                MessageBox.Show(
+                    "이력 인쇄 파일 저장에 실패했습니다.",
+                    "파일 저장",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error
+                );
+            }
+        }
+
+        private List<LogRow> GetCurrentRowsForPrintExport(
+            string mode,
+            string keyword,
+            string startDate,
+            string endDate,
+            string cacheKey,
+            List<string> selectedCategories)
+        {
+            if (_repository == null)
+            {
+                return new List<LogRow>();
+            }
+
+            if (mode == "category")
+            {
+                return GetSelectedCategoryRowsFromCache(selectedCategories);
+            }
+
+            if (mode == "date_cache")
+            {
+                lock (_queryCacheLock)
+                {
+                    if (_rowsCacheByKey.TryGetValue(cacheKey, out List<LogRow>? cachedRows))
+                    {
+                        return new List<LogRow>(cachedRows);
+                    }
+                }
+            }
+
+            if (mode == "date" || mode == "date_cache")
+            {
+                DateTime? filterStart = IsValidDate(startDate)
+                    ? DateTime.Parse(startDate).Date
+                    : null;
+
+                DateTime? filterEnd = IsValidDate(endDate)
+                    ? DateTime.Parse(endDate).Date.AddDays(1).AddTicks(-1)
+                    : null;
+
+                return _repository.StreamAllLogs()
+                    .Where(row => IsRowInDateRange(row, filterStart, filterEnd))
+                    .ToList();
+            }
+
+            if (mode == "search")
+            {
+                return _repository.StreamAllLogs()
+                    .Where(row => IsRowMatchedBySearchFields(row, keyword))
+                    .ToList();
+            }
+
+            return _repository.StreamAllLogs().ToList();
+        }
+
+        private string BuildPrintConditionText()
+        {
+            if (_currentMode == "category")
+            {
+                List<string> names = _selectedCategories
+                    .Select(category => _categoryDisplayNames.TryGetValue(category, out string? name)
+                        ? name
+                        : category)
+                    .ToList();
+
+                return names.Count == 0
+                    ? "카테고리: 선택 없음"
+                    : $"카테고리: {string.Join(", ", names)}";
+            }
+
+            if (_currentMode == "search")
+            {
+                return $"검색어: {_currentKeyword}";
+            }
+
+            if (_currentMode == "date" || _currentMode == "date_cache")
+            {
+                return $"기간: {_currentStartDate} ~ {_currentEndDate}";
+            }
+
+            return "전체 이력";
+        }
+
+        private static bool IsRowMatchedBySearchFields(LogRow row, string keyword)
+        {
+            if (string.IsNullOrWhiteSpace(keyword))
+            {
+                return true;
+            }
+
+            return row.Type.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
+                   row.Action.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
+                   row.Section.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
+                   row.Contents.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
+                   row.Packet.Contains(keyword, StringComparison.OrdinalIgnoreCase);
         }
 
         private async Task LoadDateFirstPageAsync()
