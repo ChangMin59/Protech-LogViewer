@@ -15,32 +15,36 @@ namespace DbViewer.Services.Export
             new Dictionary<string, string>();
         public IReadOnlyList<LogRow>? SelectedCategoryRows { get; init; }
         public IReadOnlyList<LogRow>? CachedRows { get; init; }
+        public string OutputDirectory { get; init; } = "";
     }
 
     public static class Save_Print_File
     {
         public static List<string> Run(SavePrintFileRequest request)
         {
-            List<LogRow> rows = GetRowsForPrintExport(request);
+            Func<IEnumerable<LogRow>> rowsFactory = GetRowsForPrintExport(request);
             string conditionText = BuildConditionText(request);
 
             return PrintHtmlExporter.Export(
-                rows,
-                "이력 내용",
-                conditionText
+                rowsFactory,
+                "프로테크 이력",
+                conditionText,
+                request.OutputDirectory
             );
         }
 
-        private static List<LogRow> GetRowsForPrintExport(SavePrintFileRequest request)
+        private static Func<IEnumerable<LogRow>> GetRowsForPrintExport(SavePrintFileRequest request)
         {
             if (request.Mode == "category")
             {
-                return request.SelectedCategoryRows?.ToList() ?? new List<LogRow>();
+                IReadOnlyList<LogRow> rows = request.SelectedCategoryRows ?? Array.Empty<LogRow>();
+                return () => rows;
             }
 
             if (request.Mode == "date_cache" && request.CachedRows != null)
             {
-                return request.CachedRows.ToList();
+                IReadOnlyList<LogRow> rows = request.CachedRows;
+                return () => rows;
             }
 
             if (request.Mode == "date" || request.Mode == "date_cache")
@@ -53,19 +57,17 @@ namespace DbViewer.Services.Export
                     ? DateTime.Parse(request.EndDate).Date.AddDays(1).AddTicks(-1)
                     : null;
 
-                return request.Repository.StreamAllLogs()
-                    .Where(row => IsRowInDateRange(row, filterStart, filterEnd))
-                    .ToList();
+                return () => request.Repository.StreamAllLogs()
+                    .Where(row => IsRowInDateRange(row, filterStart, filterEnd));
             }
 
             if (request.Mode == "search")
             {
-                return request.Repository.StreamAllLogs()
-                    .Where(row => IsRowMatchedBySearchFields(row, request.Keyword))
-                    .ToList();
+                return () => request.Repository.StreamAllLogs()
+                    .Where(row => IsRowMatchedBySearchFields(row, request.Keyword));
             }
 
-            return request.Repository.StreamAllLogs().ToList();
+            return () => request.Repository.StreamAllLogs();
         }
 
         private static string BuildConditionText(SavePrintFileRequest request)

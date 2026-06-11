@@ -1,6 +1,9 @@
 using DbViewer.Models;
 using DbViewer.Services.Export;
+using Microsoft.Win32;
+using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -29,11 +32,20 @@ namespace DbViewer
                 return;
             }
 
+            string? outputDirectory = SelectPrintOutputDirectory();
+
+            if (outputDirectory == null)
+            {
+                BlockPointerInputAfterModal();
+                return;
+            }
+
             _isExportRunning = true;
 
             try
             {
                 ClearMoveTargetHighlight();
+                ShowFileSaveProgressOverlay();
 
                 string mode = _currentMode;
                 string keyword = _currentKeyword;
@@ -68,9 +80,12 @@ namespace DbViewer
                         SelectedCategories = selectedCategories,
                         CategoryDisplayNames = _categoryDisplayNames,
                         SelectedCategoryRows = selectedCategoryRows,
-                        CachedRows = cachedRows
+                        CachedRows = cachedRows,
+                        OutputDirectory = outputDirectory
                     })
                 );
+
+                HideFileSaveProgressOverlay();
 
                 await LoadCurrentPageAsync(showLoading: false, resetScroll: false);
 
@@ -88,6 +103,8 @@ namespace DbViewer
             }
             catch
             {
+                HideFileSaveProgressOverlay();
+
                 await LoadCurrentPageAsync(showLoading: false, resetScroll: false);
 
                 MessageBox.Show(
@@ -100,8 +117,75 @@ namespace DbViewer
             }
             finally
             {
+                HideFileSaveProgressOverlay();
                 _isExportRunning = false;
             }
+        }
+
+        private void ShowFileSaveProgressOverlay()
+        {
+            FileSaveProgressOverlay.Visibility = Visibility.Visible;
+        }
+
+        private void HideFileSaveProgressOverlay()
+        {
+            FileSaveProgressOverlay.Visibility = Visibility.Collapsed;
+        }
+
+        private string? SelectPrintOutputDirectory()
+        {
+            SaveFileDialog dialog = new()
+            {
+                Title = "이력 인쇄 파일 저장",
+                InitialDirectory = GetExecutableDirectory(),
+                FileName = "이력 인쇄 파일",
+                AddExtension = false,
+                CheckFileExists = false,
+                CheckPathExists = true,
+                OverwritePrompt = false,
+                ValidateNames = true,
+                Filter = "폴더명|*"
+            };
+
+            if (dialog.ShowDialog(this) != true)
+            {
+                return null;
+            }
+
+            string outputDirectory = Path.GetFullPath(dialog.FileName);
+
+            if (File.Exists(outputDirectory))
+            {
+                MessageBox.Show(
+                    "같은 이름의 파일이 이미 있습니다.\n\n다른 폴더명을 입력하세요.",
+                    "파일 저장",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information
+                );
+                return null;
+            }
+
+            Directory.CreateDirectory(outputDirectory);
+            return outputDirectory;
+        }
+
+        private static string GetExecutableDirectory()
+        {
+            string? exePath = Process.GetCurrentProcess().MainModule?.FileName;
+
+            if (!string.IsNullOrWhiteSpace(exePath))
+            {
+                string? exeDirectory = Path.GetDirectoryName(exePath);
+
+                if (!string.IsNullOrWhiteSpace(exeDirectory))
+                {
+                    return exeDirectory;
+                }
+            }
+
+            return AppContext.BaseDirectory.TrimEnd(
+                Path.DirectorySeparatorChar,
+                Path.AltDirectorySeparatorChar);
         }
     }
 }

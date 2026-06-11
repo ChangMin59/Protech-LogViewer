@@ -4,6 +4,7 @@ using System.IO;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Media;
 
 namespace DbViewer
 {
@@ -11,7 +12,7 @@ namespace DbViewer
     {
         private void InitializeEvents()
         {
-            HistoryViewButton.MouseLeftButtonUp += (_, _) => ShowHistoryOpenChoice();
+            AttachPointerAction(HistoryViewButton, ShowHistoryOpenChoice);
 
             AttachPointerAction(HistoryRecoverButton, RecoverHistoryFileAsync);
             AttachOverlayChoiceAction(ManualHistoryFileButton, async () =>
@@ -30,7 +31,7 @@ namespace DbViewer
             });
             AttachPointerAction(ModeToggleButton, ToggleMoveModeAsync);
 
-            TotalLogButton.MouseLeftButtonUp += async (_, _) => await LoadAllFirstPageAsync();
+            AttachPointerAction(TotalLogButton, LoadAllFirstPageAsync);
 
             AttachCategoryButton(FireLogButton, "fire");
             AttachCategoryButton(AlarmLogButton, "alarm");
@@ -41,16 +42,16 @@ namespace DbViewer
             AttachCategoryButton(MccLogButton, "mcc");
             AttachCategoryButton(EtcLogButton, "other");
 
-            SearchButton.MouseLeftButtonUp += async (_, _) => await SearchFirstPageAsync();
+            AttachPointerAction(SearchButton, SearchFirstPageAsync);
 
             AttachPointerAction(SearchClearButton, ClearSearchKeywordAndReloadAllAsync);
             AttachPointerAction(Keyboard, RestartTouchKeyboardAsync);
             AttachPointerAction(FileSaveButton, SaveCurrentLogsToPrintHtmlAsync);
 
-            PeriodSearchButton.MouseLeftButtonUp += async (_, _) => await LoadDateFirstPageAsync();
-            AllPeriodButton.MouseLeftButtonUp += async (_, _) => await ApplyAllPeriodAsync();
-            SevenDaysButton.MouseLeftButtonUp += async (_, _) => await ApplyRecentDaysAsync(7);
-            ThirtyDaysButton.MouseLeftButtonUp += async (_, _) => await ApplyRecentDaysAsync(30);
+            AttachPointerAction(PeriodSearchButton, LoadDateFirstPageAsync);
+            AttachPointerAction(AllPeriodButton, ApplyAllPeriodAsync);
+            AttachPointerAction(SevenDaysButton, async () => await ApplyRecentDaysAsync(7));
+            AttachPointerAction(ThirtyDaysButton, async () => await ApplyRecentDaysAsync(30));
             LogScrollViewer.PreviewMouseLeftButtonDown += LogScrollViewer_PreviewMouseLeftButtonDown;
             LogScrollViewer.PreviewMouseMove += LogScrollViewer_PreviewMouseMove;
             LogScrollViewer.PreviewMouseLeftButtonUp += LogScrollViewer_PreviewMouseLeftButtonUp;
@@ -80,6 +81,15 @@ namespace DbViewer
             {
                 DependencyObject? source = e.OriginalSource as DependencyObject;
 
+                ReleaseSearchInputWhenOutsideClicked(source);
+                CloseDropdownsWhenOutsideClicked(source);
+            };
+
+            PreviewTouchDown += (_, e) =>
+            {
+                DependencyObject? source = e.OriginalSource as DependencyObject;
+
+                ReleaseSearchInputWhenOutsideClicked(source);
                 CloseDropdownsWhenOutsideClicked(source);
             };
 
@@ -87,6 +97,7 @@ namespace DbViewer
             {
                 DependencyObject? source = e.OriginalSource as DependencyObject;
 
+                ReleaseSearchInputWhenOutsideClicked(source);
                 CloseDropdownsWhenOutsideClicked(source);
             };
 
@@ -96,6 +107,11 @@ namespace DbViewer
                 {
                     await SearchFirstPageAsync();
                 }
+            };
+
+            SearchKeywordTextBox.PreviewTouchDown += (_, _) =>
+            {
+                ShowTouchKeyboardForSearchBox();
             };
 
             LogScrollViewer.ScrollChanged += LogScrollViewer_ScrollChanged;
@@ -117,30 +133,38 @@ namespace DbViewer
 
         private void AttachOverlayChoiceAction(UIElement element, Action action)
         {
+            PreparePressVisual(element);
+
             element.PreviewMouseLeftButtonDown += (_, e) =>
             {
                 e.Handled = true;
+                PlayPressVisual(element);
                 action();
             };
 
             element.PreviewTouchDown += (_, e) =>
             {
                 e.Handled = true;
+                PlayPressVisual(element);
                 action();
             };
         }
 
         private void AttachOverlayChoiceAction(UIElement element, Func<Task> action)
         {
+            PreparePressVisual(element);
+
             element.PreviewMouseLeftButtonDown += async (_, e) =>
             {
                 e.Handled = true;
+                PlayPressVisual(element);
                 await action();
             };
 
             element.PreviewTouchDown += async (_, e) =>
             {
                 e.Handled = true;
+                PlayPressVisual(element);
                 await action();
             };
         }
@@ -150,6 +174,8 @@ namespace DbViewer
             Action action,
             bool handleMouse = true)
         {
+            PreparePressVisual(element);
+
             element.MouseLeftButtonUp += (_, e) =>
             {
                 e.Handled = handleMouse;
@@ -158,6 +184,7 @@ namespace DbViewer
                     return;
                 }
 
+                PlayPressVisual(element);
                 action();
             };
 
@@ -169,6 +196,7 @@ namespace DbViewer
                     return;
                 }
 
+                PlayPressVisual(element);
                 action();
             };
         }
@@ -178,6 +206,8 @@ namespace DbViewer
             Func<Task> action,
             bool handleMouse = true)
         {
+            PreparePressVisual(element);
+
             element.MouseLeftButtonUp += async (_, e) =>
             {
                 e.Handled = handleMouse;
@@ -186,6 +216,7 @@ namespace DbViewer
                     return;
                 }
 
+                PlayPressVisual(element);
                 await action();
             };
 
@@ -197,8 +228,45 @@ namespace DbViewer
                     return;
                 }
 
+                PlayPressVisual(element);
                 await action();
             };
+        }
+
+        private static void PreparePressVisual(UIElement element)
+        {
+            element.RenderTransformOrigin = new Point(0.5, 0.5);
+
+            if (element.RenderTransform is ScaleTransform)
+            {
+                return;
+            }
+
+            if (element.RenderTransform == null || element.RenderTransform == Transform.Identity)
+            {
+                element.RenderTransform = new ScaleTransform(1.0, 1.0);
+            }
+        }
+
+        private static void PlayPressVisual(UIElement element)
+        {
+            if (element.RenderTransform is not ScaleTransform scale)
+            {
+                return;
+            }
+
+            scale.ScaleX = 0.97;
+            scale.ScaleY = 0.97;
+            element.Opacity = 0.82;
+
+            _ = element.Dispatcher.InvokeAsync(async () =>
+            {
+                await Task.Delay(90);
+
+                scale.ScaleX = 1.0;
+                scale.ScaleY = 1.0;
+                element.Opacity = 1.0;
+            });
         }
 
         private bool ShouldIgnorePointerAction()
@@ -245,6 +313,29 @@ namespace DbViewer
             }
         }
 
+        private void ReleaseSearchInputWhenOutsideClicked(DependencyObject? source)
+        {
+            if (source == null)
+            {
+                return;
+            }
+
+            if (IsDescendantOf(source, SearchKeywordTextBox))
+            {
+                return;
+            }
+
+            if (!SearchKeywordTextBox.IsKeyboardFocusWithin && !SearchKeywordTextBox.IsFocused)
+            {
+                return;
+            }
+
+            RootGrid.Focus();
+            System.Windows.Input.Keyboard.ClearFocus();
+            RootGrid.Focus();
+            _ = CloseTouchKeyboardAsync();
+        }
+
         private async Task RestartTouchKeyboardAsync()
         {
             SearchKeywordTextBox.Focus();
@@ -252,21 +343,7 @@ namespace DbViewer
 
             await Task.Run(() =>
             {
-                foreach (Process process in Process.GetProcessesByName("TabTip"))
-                {
-                    try
-                    {
-                        process.Kill(entireProcessTree: true);
-                        process.WaitForExit(1000);
-                    }
-                    catch
-                    {
-                    }
-                    finally
-                    {
-                        process.Dispose();
-                    }
-                }
+                CloseTouchKeyboardProcesses();
             });
 
             await Task.Delay(250);
@@ -285,6 +362,21 @@ namespace DbViewer
             }
         }
 
+        private void ShowTouchKeyboardForSearchBox()
+        {
+            SearchKeywordTextBox.Focus();
+            SearchKeywordTextBox.CaretIndex = SearchKeywordTextBox.Text.Length;
+
+            _ = Dispatcher.InvokeAsync(async () =>
+            {
+                await Task.Delay(80);
+
+                SearchKeywordTextBox.Focus();
+                SearchKeywordTextBox.CaretIndex = SearchKeywordTextBox.Text.Length;
+                TryStartTouchKeyboard();
+            });
+        }
+
         private static bool TryStartTouchKeyboard()
         {
             string tabTipPath = Path.Combine(
@@ -301,6 +393,45 @@ namespace DbViewer
 
             return TryStartProcess(tabTipPath) ||
                    TryStartProcess(oskPath);
+        }
+
+        private static async Task CloseTouchKeyboardAsync()
+        {
+            await Task.Run(() =>
+            {
+                CloseTouchKeyboardProcesses();
+            });
+        }
+
+        private static void CloseTouchKeyboardProcesses()
+        {
+            CloseProcessesByName("TabTip");
+            CloseProcessesByName("TextInputHost");
+            CloseProcessesByName("InputApp");
+            CloseProcessesByName("osk");
+        }
+
+        private static void CloseProcessesByName(string processName)
+        {
+            foreach (Process process in Process.GetProcessesByName(processName))
+            {
+                try
+                {
+                    if (!process.CloseMainWindow())
+                    {
+                        process.Kill(entireProcessTree: true);
+                    }
+
+                    process.WaitForExit(1000);
+                }
+                catch
+                {
+                }
+                finally
+                {
+                    process.Dispose();
+                }
+            }
         }
 
         private static bool TryStartProcess(string path)

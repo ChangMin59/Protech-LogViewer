@@ -96,7 +96,7 @@ namespace DbViewer
         private const double LogRowVisualHeight = 50.0;
         private const string MoveTargetLineTag = "MoveTargetLine";
         private const int PointerActionDebounceMilliseconds = 450;
-        private const int ModalCloseInputGuardMilliseconds = 900;
+        private const int ModalCloseInputGuardMilliseconds = 500;
 
         private readonly Dictionary<string, string> _categoryDisplayNames = new()
         {
@@ -125,6 +125,8 @@ namespace DbViewer
         public MainWindow()
         {
             InitializeComponent();
+
+            RootGrid.Focusable = true;
 
             InitializeEvents();
             InitializeDefaultText();
@@ -1588,6 +1590,7 @@ namespace DbViewer
         protected override void OnClosed(EventArgs e)
         {
             CancelRunningJobs();
+            CloseTouchKeyboardProcesses();
             base.OnClosed(e);
         }
     }

@@ -15,12 +15,11 @@ namespace DbViewer.Services.Export
         private const int ChunkSize = 10000;
 
         public static List<string> Export(
-            IEnumerable<LogRow> sourceRows,
+            Func<IEnumerable<LogRow>> sourceRowsFactory,
             string title,
             string conditionText,
             string? outputDir = null)
         {
-            List<LogRow> rows = sourceRows.ToList();
             string finalOutputDir = outputDir ?? Path.Combine(AppContext.BaseDirectory, "이력 인쇄 파일");
 
             Directory.CreateDirectory(finalOutputDir);
@@ -28,47 +27,129 @@ namespace DbViewer.Services.Export
             DateTime now = DateTime.Now;
             string timestamp = now.ToString("yyyyMMdd_HHmmss");
             string generatedAt = now.ToString("yyyy-MM-dd HH:mm:ss");
-            Dictionary<string, int> totalSummary = CalculateLogSummary(rows);
+            ExportSummary totalSummary = CalculateLogSummary(sourceRowsFactory);
 
-            int totalCount = rows.Count;
+            int totalCount = totalSummary.TotalCount;
             int totalParts = Math.Max(1, (int)Math.Ceiling(totalCount / (double)ChunkSize));
             List<string> savedPaths = new();
 
-            for (int partIndex = 0; partIndex < totalParts; partIndex++)
+            if (totalCount == 0)
             {
-                int startIndex = partIndex * ChunkSize;
-                int endIndex = Math.Min(startIndex + ChunkSize, totalCount);
-                int partNumber = partIndex + 1;
-
-                List<LogRow> chunkRows = rows
-                    .Skip(startIndex)
-                    .Take(endIndex - startIndex)
-                    .ToList();
-
                 string outputPath = UniquePrintPath(Path.Combine(
                     finalOutputDir,
-                    $"인쇄파일_{timestamp}_{partNumber:000}.html"
+                    $"인쇄파일_{timestamp}_001.html"
                 ));
 
                 WritePrintHtmlFile(
                     outputPath,
+                    new List<LogRow>(),
+                    title,
+                    conditionText,
+                    generatedAt,
+                    totalCount,
+                    totalSummary.Counts,
+                    1,
+                    totalParts,
+                    0,
+                    0,
+                    showReportHeader: true
+                );
+
+                savedPaths.Add(outputPath);
+                return savedPaths;
+            }
+
+            List<LogRow> chunkRows = new(ChunkSize);
+            int partNumber = 1;
+            int startNumber = 1;
+            int rowNumber = 0;
+
+            foreach (LogRow row in sourceRowsFactory())
+            {
+                chunkRows.Add(row);
+                rowNumber++;
+
+                if (chunkRows.Count < ChunkSize)
+                {
+                    continue;
+                }
+
+                savedPaths.Add(WriteChunk(
+                    finalOutputDir,
+                    timestamp,
                     chunkRows,
                     title,
                     conditionText,
                     generatedAt,
                     totalCount,
-                    totalSummary,
+                    totalSummary.Counts,
                     partNumber,
                     totalParts,
-                    totalCount == 0 ? 0 : startIndex + 1,
-                    endIndex,
-                    showReportHeader: partNumber == 1
-                );
+                    startNumber,
+                    rowNumber
+                ));
 
-                savedPaths.Add(outputPath);
+                chunkRows = new List<LogRow>(ChunkSize);
+                partNumber++;
+                startNumber = rowNumber + 1;
+            }
+
+            if (chunkRows.Count > 0)
+            {
+                savedPaths.Add(WriteChunk(
+                    finalOutputDir,
+                    timestamp,
+                    chunkRows,
+                    title,
+                    conditionText,
+                    generatedAt,
+                    totalCount,
+                    totalSummary.Counts,
+                    partNumber,
+                    totalParts,
+                    startNumber,
+                    rowNumber
+                ));
             }
 
             return savedPaths;
+        }
+
+        private static string WriteChunk(
+            string outputDir,
+            string timestamp,
+            List<LogRow> chunkRows,
+            string title,
+            string conditionText,
+            string generatedAt,
+            int totalCount,
+            Dictionary<string, int> totalSummary,
+            int partNumber,
+            int totalParts,
+            int startNumber,
+            int endNumber)
+        {
+            string outputPath = UniquePrintPath(Path.Combine(
+                outputDir,
+                $"인쇄파일_{timestamp}_{partNumber:000}.html"
+            ));
+
+            WritePrintHtmlFile(
+                outputPath,
+                chunkRows,
+                title,
+                conditionText,
+                generatedAt,
+                totalCount,
+                totalSummary,
+                partNumber,
+                totalParts,
+                startNumber,
+                endNumber,
+                showReportHeader: partNumber == 1
+            );
+
+            return outputPath;
         }
 
         private static void WritePrintHtmlFile(
@@ -100,7 +181,7 @@ namespace DbViewer.Services.Export
 
             if (showReportHeader)
             {
-                WriteReportHeader(html, title, conditionText, generatedAt, totalCount, totalSummary, totalParts);
+                WriteReportHeader(html, title, conditionText, generatedAt, totalCount, totalSummary);
             }
             else
             {
@@ -122,8 +203,7 @@ namespace DbViewer.Services.Export
             string conditionText,
             string generatedAt,
             int totalCount,
-            Dictionary<string, int> totalSummary,
-            int totalParts)
+            Dictionary<string, int> totalSummary)
         {
             html.WriteLine("<section class=\"report-header\">");
             html.WriteLine("<div class=\"report-title-row\">");
@@ -136,10 +216,24 @@ namespace DbViewer.Services.Export
             html.WriteLine("<div class=\"summary-grid\">");
             html.WriteLine(BuildSummaryCard("조회 조건", conditionText));
             html.WriteLine(BuildSummaryCard("전체 건수", $"{totalCount:N0}건"));
-            html.WriteLine(BuildSummaryCard("생성 파일", $"{totalParts:N0}개"));
-            html.WriteLine(BuildSummaryCard("화재 발생", $"{totalSummary["fire"]:N0}건"));
-            html.WriteLine(BuildSummaryCard("고장·단선", $"{totalSummary["fault"]:N0}건"));
-            html.WriteLine(BuildSummaryCard("복구", $"{totalSummary["recover"]:N0}건"));
+
+            foreach (SummaryCategory category in GetSummaryCategories())
+            {
+                int count = totalSummary.TryGetValue(category.Key, out int value)
+                    ? value
+                    : 0;
+
+                if (count <= 0)
+                {
+                    continue;
+                }
+
+                html.WriteLine(BuildCategorySummaryCard(
+                    category.Label,
+                    $"{count:N0}건",
+                    GetSummaryCategoryColor(category.Key)));
+            }
+
             html.WriteLine("</div>");
             html.WriteLine("</section>");
         }
@@ -231,45 +325,88 @@ namespace DbViewer.Services.Export
             throw new IOException($"인쇄 파일명을 만들 수 없습니다: {path}");
         }
 
-        private static Dictionary<string, int> CalculateLogSummary(List<LogRow> rows)
+        private sealed class ExportSummary
+        {
+            public int TotalCount { get; init; }
+            public Dictionary<string, int> Counts { get; init; } = new();
+        }
+
+        private static ExportSummary CalculateLogSummary(Func<IEnumerable<LogRow>> sourceRowsFactory)
         {
             Dictionary<string, int> summary = new()
             {
                 ["fire"] = 0,
-                ["fault"] = 0,
-                ["recover"] = 0,
-                ["normal"] = 0
+                ["alarm"] = 0,
+                ["relay_fault"] = 0,
+                ["an_fault"] = 0,
+                ["line_fault"] = 0,
+                ["output"] = 0,
+                ["mcc"] = 0
             };
 
-            for (int index = 0; index < rows.Count; index++)
-            {
-                string rowTag = LogClassifier.ClassifyRowTag(rows[index], index);
+            int index = 0;
 
-                if (rowTag is "fire_row" or "fire_text" or "fire_strong_text" or "fire_soft_row")
+            foreach (LogRow row in sourceRowsFactory())
+            {
+                string rowTag = LogClassifier.ClassifyRowTag(row, index);
+                List<string> categories = LogClassifier.GetCategoryKeys(row, rowTag);
+
+                foreach (string category in categories)
                 {
-                    summary["fire"]++;
+                    if (!summary.ContainsKey(category))
+                    {
+                        continue;
+                    }
+
+                    summary[category]++;
                 }
-                else if (rowTag is "line_fault_row" or "line_fault_text" or
-                         "fault_row" or "fault_text" or
-                         "receiver_fault_row" or "receiver_fault_text" or
-                         "panel_fault_row" or "panel_fault_text" or
-                         "relay_fault_row" or "relay_fault_text" or
-                         "fault_soft_row" or "fault_soft_text" or
-                         "mcc_badge")
-                {
-                    summary["fault"]++;
-                }
-                else if (rowTag == "recover_row")
-                {
-                    summary["recover"]++;
-                }
-                else
-                {
-                    summary["normal"]++;
-                }
+
+                index++;
             }
 
-            return summary;
+            return new ExportSummary
+            {
+                TotalCount = index,
+                Counts = summary
+            };
+        }
+
+        private sealed class SummaryCategory
+        {
+            public string Key { get; init; } = "";
+            public string Label { get; init; } = "";
+        }
+
+        private static readonly Dictionary<string, string> SummaryCategoryColors = new()
+        {
+            ["fire"] = "#DC2626",
+            ["alarm"] = "#2563EB",
+            ["relay_fault"] = "#7C3AED",
+            ["an_fault"] = "#EA580C",
+            ["line_fault"] = "#A16207",
+            ["output"] = "#16A34A",
+            ["mcc"] = "#334155"
+        };
+
+        private static SummaryCategory[] GetSummaryCategories()
+        {
+            return new[]
+            {
+                new SummaryCategory { Key = "fire", Label = "화재" },
+                new SummaryCategory { Key = "alarm", Label = "제경보" },
+                new SummaryCategory { Key = "relay_fault", Label = "중계기 고장" },
+                new SummaryCategory { Key = "an_fault", Label = "AN고장" },
+                new SummaryCategory { Key = "line_fault", Label = "단선" },
+                new SummaryCategory { Key = "output", Label = "출력" },
+                new SummaryCategory { Key = "mcc", Label = "MCC" }
+            };
+        }
+
+        private static string GetSummaryCategoryColor(string categoryKey)
+        {
+            return SummaryCategoryColors.TryGetValue(categoryKey, out string? color)
+                ? color
+                : "#334155";
         }
 
         private static string BuildSummaryCard(string label, string value)
@@ -277,6 +414,18 @@ namespace DbViewer.Services.Export
             return
                 "<div class=\"summary-card\">\n" +
                 $"  <div class=\"summary-label\">{Escape(label)}</div>\n" +
+                $"  <div class=\"summary-value\">{Escape(value)}</div>\n" +
+                "</div>";
+        }
+
+        private static string BuildCategorySummaryCard(string label, string value, string color)
+        {
+            return
+                "<div class=\"summary-card\">\n" +
+                "  <div class=\"summary-label summary-label-category\">\n" +
+                $"    <span class=\"summary-color-box\" style=\"background:{Escape(color)};\"></span>\n" +
+                $"    <span>{Escape(label)}</span>\n" +
+                "  </div>\n" +
                 $"  <div class=\"summary-value\">{Escape(value)}</div>\n" +
                 "</div>";
         }
@@ -362,6 +511,8 @@ h1 { margin: 0; color: #0F172A; font-size: 30px; font-weight: 900; }
   background: #FFFFFF;
 }
 .summary-label { margin-bottom: 5px; color: #64748B; font-size: 11px; font-weight: 800; }
+.summary-label-category { display: flex; align-items: center; gap: 6px; }
+.summary-color-box { display: inline-block; width: 10px; height: 10px; border-radius: 2px; flex: 0 0 auto; }
 .summary-value { color: #0F172A; font-size: 13px; font-weight: 900; line-height: 1.35; word-break: break-all; }
 .continuation-title {
   margin-bottom: 8px;
@@ -450,6 +601,8 @@ h1 { margin: 0; color: #0F172A; font-size: 30px; font-weight: 900; }
   .summary-grid { grid-template-columns: repeat(3, 1fr); gap: 4px; }
   .summary-card { min-height: 36px; padding: 4px 6px; border-radius: 4px; }
   .summary-label { margin-bottom: 2px; font-size: 8.5px; }
+  .summary-label-category { gap: 4px; }
+  .summary-color-box { width: 7px; height: 7px; border-radius: 1px; }
   .summary-value { font-size: 9px; }
   .screen-only { display: none; }
   thead { display: table-header-group; }
