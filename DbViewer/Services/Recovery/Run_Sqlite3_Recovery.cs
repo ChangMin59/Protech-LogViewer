@@ -29,37 +29,24 @@ namespace DbViewer.Services.Recovery
     public static class DbRecovery
     {
         private const int ProcessTimeoutMilliseconds = 300_000;
+        private const string RecoveryRootDirectoryName = "sqllite_DB";
+        private const string LegacyRecoveryRootDirectoryName = "sqlite_DB";
+        private const string TempRecoveryDirectoryName = "db복구";
 
         public static DbRecoveryResult Recover(string sourceDbPath)
         {
             if (string.IsNullOrWhiteSpace(sourceDbPath))
             {
-                return Failure(sourceDbPath, "복구할 DB 경로가 비어 있습니다.");
-            }
-
-            if (!File.Exists(sourceDbPath))
-            {
-                return Failure(sourceDbPath, "복구할 DB 파일을 찾을 수 없습니다.");
+                throw new ArgumentException("sourceDbPath is required.", nameof(sourceDbPath));
             }
 
             string sqliteExePath = FindSqliteExePath();
 
-            if (!File.Exists(sqliteExePath))
-            {
-                return Failure(
-                    sourceDbPath,
-                    "sqlite3.exe 파일을 찾을 수 없습니다.\n\n" +
-                    "프로젝트의 sqlite3 또는 sqllite3 폴더에 sqlite3.exe를 넣고,\n" +
-                    "속성에서 [빌드 작업: 내용], [출력 디렉터리에 복사: 새 버전이면 복사]로 설정하세요.\n\n" +
-                    $"확인 경로:\n{sqliteExePath}"
-                );
-            }
-
             string tempRecoveryDir = "";
+            string sourceDir = Path.GetDirectoryName(sourceDbPath) ?? "";
 
             try
             {
-                string sourceDir = Path.GetDirectoryName(sourceDbPath) ?? "";
                 string backupDir = CreateTimestampBackupDirectory(sourceDir);
                 tempRecoveryDir = PrepareTempRecoveryDirectory(sourceDir);
 
@@ -210,6 +197,11 @@ namespace DbViewer.Services.Recovery
                 {
                     DeleteDirectoryIfExists(tempRecoveryDir);
                 }
+
+                if (!string.IsNullOrWhiteSpace(sourceDir))
+                {
+                    CleanupTempRecoveryDirectories(sourceDir);
+                }
             }
         }
 
@@ -232,7 +224,7 @@ namespace DbViewer.Services.Recovery
 
         private static string CreateTimestampBackupDirectory(string sourceDir)
         {
-            string recoveryRootDir = Path.Combine(sourceDir, "sqllite_DB");
+            string recoveryRootDir = Path.Combine(sourceDir, RecoveryRootDirectoryName);
             Directory.CreateDirectory(recoveryRootDir);
 
             string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
@@ -259,12 +251,32 @@ namespace DbViewer.Services.Recovery
 
         private static string PrepareTempRecoveryDirectory(string sourceDir)
         {
-            string tempRecoveryDir = Path.Combine(sourceDir, "sqllite_DB", "db복구");
+            CleanupTempRecoveryDirectories(sourceDir);
+
+            string tempRecoveryDir = Path.Combine(
+                sourceDir,
+                RecoveryRootDirectoryName,
+                TempRecoveryDirectoryName
+            );
 
             DeleteDirectoryIfExists(tempRecoveryDir);
             Directory.CreateDirectory(tempRecoveryDir);
 
             return tempRecoveryDir;
+        }
+
+        private static void CleanupTempRecoveryDirectories(string sourceDir)
+        {
+            string[] tempRecoveryDirs =
+            {
+                Path.Combine(sourceDir, RecoveryRootDirectoryName, TempRecoveryDirectoryName),
+                Path.Combine(sourceDir, LegacyRecoveryRootDirectoryName, TempRecoveryDirectoryName)
+            };
+
+            foreach (string tempRecoveryDir in tempRecoveryDirs)
+            {
+                DeleteDirectoryIfExists(tempRecoveryDir);
+            }
         }
 
         private static string FindSqliteExePath()
@@ -611,7 +623,8 @@ namespace DbViewer.Services.Recovery
             SqliteConnectionStringBuilder builder = new()
             {
                 DataSource = dbPath,
-                Mode = SqliteOpenMode.ReadOnly
+                Mode = SqliteOpenMode.ReadOnly,
+                Pooling = false
             };
 
             return new SqliteConnection(builder.ToString());
@@ -639,6 +652,7 @@ namespace DbViewer.Services.Recovery
                 return;
             }
 
+            SqliteConnection.ClearAllPools();
             GC.Collect();
             GC.WaitForPendingFinalizers();
 
@@ -646,7 +660,9 @@ namespace DbViewer.Services.Recovery
             {
                 try
                 {
+                    SqliteConnection.ClearAllPools();
                     NormalizeDirectoryAttributes(path);
+                    DeleteDirectoryContents(path);
                     Directory.Delete(path, recursive: true);
                     return;
                 }
@@ -654,6 +670,27 @@ namespace DbViewer.Services.Recovery
                 {
                     Thread.Sleep(200);
                 }
+            }
+        }
+
+        private static void DeleteDirectoryContents(string path)
+        {
+            if (!Directory.Exists(path))
+            {
+                return;
+            }
+
+            foreach (string filePath in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
+            {
+                File.SetAttributes(filePath, FileAttributes.Normal);
+                File.Delete(filePath);
+            }
+
+            foreach (string directoryPath in Directory
+                         .EnumerateDirectories(path, "*", SearchOption.AllDirectories)
+                         .OrderByDescending(directory => directory.Length))
+            {
+                Directory.Delete(directoryPath, recursive: false);
             }
         }
 

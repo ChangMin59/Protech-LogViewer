@@ -14,17 +14,17 @@ namespace DbViewer
             HistoryViewButton.MouseLeftButtonUp += (_, _) => ShowHistoryOpenChoice();
 
             AttachPointerAction(HistoryRecoverButton, RecoverHistoryFileAsync);
-            AttachPointerAction(ManualHistoryFileButton, async () =>
+            AttachOverlayChoiceAction(ManualHistoryFileButton, async () =>
             {
                 HistoryOpenChoiceOverlay.Visibility = Visibility.Collapsed;
                 await OpenHistoryFileAsync();
             });
-            AttachPointerAction(AutoHistoryFileButton, async () =>
+            AttachOverlayChoiceAction(AutoHistoryFileButton, async () =>
             {
                 HistoryOpenChoiceOverlay.Visibility = Visibility.Collapsed;
                 await OpenAutoHistoryFileAsync();
             });
-            AttachPointerAction(CancelHistoryOpenButton, () =>
+            AttachOverlayChoiceAction(CancelHistoryOpenButton, () =>
             {
                 HistoryOpenChoiceOverlay.Visibility = Visibility.Collapsed;
             });
@@ -71,6 +71,11 @@ namespace DbViewer
             AttachPageSizeButton(PageSize50000Button, 50000);
             AttachPageSizeButton(PageSize100000Button, 100000);
 
+            PreviewMouseLeftButtonDown += GuardPointerInputPreview;
+            PreviewMouseLeftButtonUp += GuardPointerInputPreview;
+            PreviewTouchDown += GuardTouchInputPreview;
+            PreviewTouchUp += GuardTouchInputPreview;
+
             PreviewMouseLeftButtonDown += (_, e) =>
             {
                 DependencyObject? source = e.OriginalSource as DependencyObject;
@@ -108,6 +113,36 @@ namespace DbViewer
         private void AttachPageSizeButton(UIElement button, int size)
         {
             AttachPointerAction(button, async () => await ChangePageSizeAsync(size));
+        }
+
+        private void AttachOverlayChoiceAction(UIElement element, Action action)
+        {
+            element.PreviewMouseLeftButtonDown += (_, e) =>
+            {
+                e.Handled = true;
+                action();
+            };
+
+            element.PreviewTouchDown += (_, e) =>
+            {
+                e.Handled = true;
+                action();
+            };
+        }
+
+        private void AttachOverlayChoiceAction(UIElement element, Func<Task> action)
+        {
+            element.PreviewMouseLeftButtonDown += async (_, e) =>
+            {
+                e.Handled = true;
+                await action();
+            };
+
+            element.PreviewTouchDown += async (_, e) =>
+            {
+                e.Handled = true;
+                await action();
+            };
         }
 
         private void AttachPointerAction(
@@ -170,6 +205,11 @@ namespace DbViewer
         {
             DateTime now = DateTime.Now;
 
+            if (now <= _ignorePointerUntil)
+            {
+                return true;
+            }
+
             if ((now - _lastPointerActionAt).TotalMilliseconds < PointerActionDebounceMilliseconds)
             {
                 return true;
@@ -177,6 +217,32 @@ namespace DbViewer
 
             _lastPointerActionAt = now;
             return false;
+        }
+
+        private void BlockPointerInputAfterModal()
+        {
+            _ignorePointerUntil = DateTime.Now.AddMilliseconds(ModalCloseInputGuardMilliseconds);
+        }
+
+        private bool IsPointerInputBlocked()
+        {
+            return DateTime.Now <= _ignorePointerUntil;
+        }
+
+        private void GuardPointerInputPreview(object sender, MouseButtonEventArgs e)
+        {
+            if (IsPointerInputBlocked())
+            {
+                e.Handled = true;
+            }
+        }
+
+        private void GuardTouchInputPreview(object? sender, TouchEventArgs e)
+        {
+            if (IsPointerInputBlocked())
+            {
+                e.Handled = true;
+            }
         }
 
         private async Task RestartTouchKeyboardAsync()

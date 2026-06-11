@@ -1,10 +1,11 @@
 using Microsoft.Win32;
+using System.Windows;
 
 namespace DbViewer.Services.View
 {
     public static class Select_File
     {
-        public static string? SelectHistoryFilePath()
+        public static string? SelectHistoryFilePath(Window owner)
         {
             OpenFileDialog dialog = new()
             {
@@ -13,7 +14,7 @@ namespace DbViewer.Services.View
                 Multiselect = false
             };
 
-            if (dialog.ShowDialog() != true)
+            if (dialog.ShowDialog(owner) != true)
             {
                 return null;
             }
