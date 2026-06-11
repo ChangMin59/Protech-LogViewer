@@ -6,7 +6,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace DbViewer.Services
+namespace DbViewer.Services.Recovery
 {
     public sealed class DbRecoveryResult
     {

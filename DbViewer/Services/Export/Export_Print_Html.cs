@@ -1,4 +1,5 @@
 using DbViewer.Models;
+using DbViewer.Services.Common;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -7,7 +8,7 @@ using System.Net;
 using System.Text;
 using System.Windows.Media;
 
-namespace DbViewer.Services
+namespace DbViewer.Services.Export
 {
     public static class PrintHtmlExporter
     {

@@ -1,7 +1,9 @@
 ﻿using DbViewer.Models;
-using DbViewer.Services;
-using Microsoft.Win32;
-using Microsoft.Data.Sqlite;
+using DbViewer.Services.Common;
+using DbViewer.Services.Export;
+using DbViewer.Services.Recovery;
+using DbViewer.Services.Render;
+using DbViewer.Services.View;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -15,8 +17,6 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using System.IO;
-using System.Text;
-using System.Text.RegularExpressions;
 
 namespace DbViewer
 {
@@ -119,22 +119,6 @@ namespace DbViewer
             public int PageNumber { get; init; }
             public int RowIndexInPage { get; init; }
         }
-        private sealed class DbOpenCheckResult
-        {
-            public bool Success { get; init; }
-            public int TotalCount { get; init; }
-            public string StartDate { get; init; } = "";
-            public string EndDate { get; init; } = "";
-            public string ErrorMessage { get; init; } = "";
-        }
-
-        private sealed class TxtConvertResult
-        {
-            public bool Success { get; init; }
-            public string DbPath { get; init; } = "";
-            public string ErrorMessage { get; init; } = "";
-        }
-
         public MainWindow()
         {
             InitializeComponent();
@@ -142,258 +126,6 @@ namespace DbViewer
             InitializeEvents();
             InitializeDefaultText();
         }
-
-        private void InitializeEvents()
-        {
-            HistoryViewButton.MouseLeftButtonUp += (_, _) => ShowHistoryOpenChoice();
-
-            AttachPointerAction(HistoryRecoverButton, RecoverHistoryFileAsync);
-            AttachPointerAction(ManualHistoryFileButton, async () =>
-            {
-                HistoryOpenChoiceOverlay.Visibility = Visibility.Collapsed;
-                await OpenHistoryFileAsync();
-            });
-            AttachPointerAction(AutoHistoryFileButton, async () =>
-            {
-                HistoryOpenChoiceOverlay.Visibility = Visibility.Collapsed;
-                await OpenAutoHistoryFileAsync();
-            });
-            AttachPointerAction(CancelHistoryOpenButton, () =>
-            {
-                HistoryOpenChoiceOverlay.Visibility = Visibility.Collapsed;
-            });
-            AttachPointerAction(ModeToggleButton, ToggleMoveModeAsync);
-
-            TotalLogButton.MouseLeftButtonUp += async (_, _) => await LoadAllFirstPageAsync();
-
-            AttachCategoryButton(FireLogButton, "fire");
-            AttachCategoryButton(AlarmLogButton, "alarm");
-            AttachCategoryButton(RelayErrorLogButton, "relay_fault");
-            AttachCategoryButton(AnErrorLogButton, "an_fault");
-            AttachCategoryButton(LineBreakLogButton, "line_fault");
-            AttachCategoryButton(OutputLogButton, "output");
-            AttachCategoryButton(MccLogButton, "mcc");
-            AttachCategoryButton(EtcLogButton, "other");
-
-            SearchButton.MouseLeftButtonUp += async (_, _) => await SearchFirstPageAsync();
-
-            AttachPointerAction(SearchClearButton, ClearSearchKeywordAndReloadAllAsync);
-            AttachPointerAction(Keyboard, RestartTouchKeyboardAsync);
-            AttachPointerAction(FileSaveButton, SaveCurrentLogsToPrintHtmlAsync);
-
-            PeriodSearchButton.MouseLeftButtonUp += async (_, _) => await LoadDateFirstPageAsync();
-            AllPeriodButton.MouseLeftButtonUp += async (_, _) => await ApplyAllPeriodAsync();
-            SevenDaysButton.MouseLeftButtonUp += async (_, _) => await ApplyRecentDaysAsync(7);
-            ThirtyDaysButton.MouseLeftButtonUp += async (_, _) => await ApplyRecentDaysAsync(30);
-            LogScrollViewer.PreviewMouseLeftButtonDown += LogScrollViewer_PreviewMouseLeftButtonDown;
-            LogScrollViewer.PreviewMouseMove += LogScrollViewer_PreviewMouseMove;
-            LogScrollViewer.PreviewMouseLeftButtonUp += LogScrollViewer_PreviewMouseLeftButtonUp;
-            LogScrollViewer.MouseLeave += LogScrollViewer_MouseLeave;
-
-            AttachPointerAction(StartDateButton, () => OpenDateCalendar(StartDateButton, StartDateText));
-            AttachPointerAction(EndDateButton, () => OpenDateCalendar(EndDateButton, EndDateText));
-
-            DateCalendar.SelectedDatesChanged += (_, _) =>
-            {
-                ApplySelectedDateFromCalendar();
-            };
-
-            AttachPointerAction(PageSizeButton, TogglePageSizeDropdown);
-            AttachPageSizeButton(PageSize1000Button, 1000);
-            AttachPageSizeButton(PageSize5000Button, 5000);
-            AttachPageSizeButton(PageSize10000Button, 10000);
-            AttachPageSizeButton(PageSize50000Button, 50000);
-            AttachPageSizeButton(PageSize100000Button, 100000);
-
-            PreviewMouseLeftButtonDown += (_, e) =>
-            {
-                DependencyObject? source = e.OriginalSource as DependencyObject;
-
-                CloseDropdownsWhenOutsideClicked(source);
-            };
-
-            TouchDown += (_, e) =>
-            {
-                DependencyObject? source = e.OriginalSource as DependencyObject;
-
-                CloseDropdownsWhenOutsideClicked(source);
-            };
-
-            SearchKeywordTextBox.KeyDown += async (_, e) =>
-            {
-                if (e.Key == Key.Enter)
-                {
-                    await SearchFirstPageAsync();
-                }
-            };
-
-            LogScrollViewer.ScrollChanged += LogScrollViewer_ScrollChanged;
-        }
-
-        private void AttachCategoryButton(UIElement button, string category)
-        {
-            AttachPointerAction(
-                button,
-                async () => await HandleCategoryButtonAsync(category),
-                handleMouse: false
-            );
-        }
-
-        private void AttachPageSizeButton(UIElement button, int size)
-        {
-            AttachPointerAction(button, async () => await ChangePageSizeAsync(size));
-        }
-
-        private void AttachPointerAction(
-            UIElement element,
-            Action action,
-            bool handleMouse = true)
-        {
-            element.MouseLeftButtonUp += (_, e) =>
-            {
-                e.Handled = handleMouse;
-                if (ShouldIgnorePointerAction())
-                {
-                    return;
-                }
-
-                action();
-            };
-
-            element.TouchDown += (_, e) =>
-            {
-                e.Handled = true;
-                if (ShouldIgnorePointerAction())
-                {
-                    return;
-                }
-
-                action();
-            };
-        }
-
-        private void AttachPointerAction(
-            UIElement element,
-            Func<Task> action,
-            bool handleMouse = true)
-        {
-            element.MouseLeftButtonUp += async (_, e) =>
-            {
-                e.Handled = handleMouse;
-                if (ShouldIgnorePointerAction())
-                {
-                    return;
-                }
-
-                await action();
-            };
-
-            element.TouchDown += async (_, e) =>
-            {
-                e.Handled = true;
-                if (ShouldIgnorePointerAction())
-                {
-                    return;
-                }
-
-                await action();
-            };
-        }
-
-        private bool ShouldIgnorePointerAction()
-        {
-            DateTime now = DateTime.Now;
-
-            if ((now - _lastPointerActionAt).TotalMilliseconds < PointerActionDebounceMilliseconds)
-            {
-                return true;
-            }
-
-            _lastPointerActionAt = now;
-            return false;
-        }
-
-        private async Task RestartTouchKeyboardAsync()
-        {
-            SearchKeywordTextBox.Focus();
-            SearchKeywordTextBox.CaretIndex = SearchKeywordTextBox.Text.Length;
-
-            await Task.Run(() =>
-            {
-                foreach (Process process in Process.GetProcessesByName("TabTip"))
-                {
-                    try
-                    {
-                        process.Kill(entireProcessTree: true);
-                        process.WaitForExit(1000);
-                    }
-                    catch
-                    {
-                    }
-                    finally
-                    {
-                        process.Dispose();
-                    }
-                }
-            });
-
-            await Task.Delay(250);
-
-            SearchKeywordTextBox.Focus();
-            SearchKeywordTextBox.CaretIndex = SearchKeywordTextBox.Text.Length;
-
-            if (!TryStartTouchKeyboard())
-            {
-                MessageBox.Show(
-                    "윈도우 터치 키보드를 실행할 수 없습니다.",
-                    "키보드 복구",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Warning
-                );
-            }
-        }
-
-        private static bool TryStartTouchKeyboard()
-        {
-            string tabTipPath = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.CommonProgramFiles),
-                "Microsoft Shared",
-                "ink",
-                "TabTip.exe"
-            );
-
-            string oskPath = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.System),
-                "osk.exe"
-            );
-
-            return TryStartProcess(tabTipPath) ||
-                   TryStartProcess(oskPath);
-        }
-
-        private static bool TryStartProcess(string path)
-        {
-            if (!File.Exists(path))
-            {
-                return false;
-            }
-
-            try
-            {
-                Process.Start(new ProcessStartInfo
-                {
-                    FileName = path,
-                    UseShellExecute = true
-                });
-
-                return true;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
 
         private void InitializeDefaultText()
         {
@@ -415,8 +147,8 @@ namespace DbViewer
             FixedTimeRowsPanel.Children.Clear();
             LogRowsPanel.Children.Clear();
 
-            FixedTimeRowsPanel.Children.Add(CreateFixedEmptyCell());
-            LogRowsPanel.Children.Add(CreateEmptyRow(""));
+            FixedTimeRowsPanel.Children.Add(Render_Log_Row.CreateFixedEmptyCell());
+            LogRowsPanel.Children.Add(Render_Log_Row.CreateEmptyRow(""));
 
             UpdatePageSizeDropdownStyle();
             RebuildPaginationButtons();
@@ -439,36 +171,19 @@ namespace DbViewer
 
         private async Task OpenHistoryFileAsync()
         {
-            OpenFileDialog dialog = new()
-            {
-                Title = "이력 파일 선택",
-                Filter = "이력 파일 (*.db;*.txt)|*.db;*.txt|SQLite DB (*.db)|*.db|텍스트 이력 (*.txt)|*.txt|모든 파일 (*.*)|*.*",
-                Multiselect = false
-            };
+            string? historyFilePath = Select_File.SelectHistoryFilePath();
 
-            if (dialog.ShowDialog() != true)
+            if (historyFilePath == null)
             {
                 return;
             }
 
-            await OpenHistoryFileByPathAsync(dialog.FileName);
+            await OpenHistoryFileByPathAsync(historyFilePath);
         }
         private async Task RecoverHistoryFileAsync()
         {
             if (_isRecoveryRunning)
             {
-                return;
-            }
-
-            string sourceDbPath = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.Windows),
-                "Log.db"
-            );
-
-            if (!File.Exists(sourceDbPath))
-            {
-                ShowRecoverySourceMissingMessage();
-
                 return;
             }
 
@@ -483,11 +198,18 @@ namespace DbViewer
                 SetLoadingState("이력 파일을 복구하는 중입니다...");
                 ShowRecoveryProgressOverlay();
 
-                DbRecoveryResult result = await Task.Run(() =>
-                    DbRecovery.Recover(sourceDbPath)
-                );
+                StartRecoveryResult startResult = await Start_Recovery.RunAsync();
 
                 HideRecoveryProgressOverlay();
+
+                if (!startResult.SourceFound || startResult.RecoveryResult == null)
+                {
+                    ShowRecoverySourceMissingMessage();
+
+                    return;
+                }
+
+                DbRecoveryResult result = startResult.RecoveryResult;
 
                 if (!result.Success)
                 {
@@ -507,8 +229,8 @@ namespace DbViewer
                 FixedTimeRowsPanel.Children.Clear();
                 LogRowsPanel.Children.Clear();
 
-                FixedTimeRowsPanel.Children.Add(CreateFixedEmptyCell());
-                LogRowsPanel.Children.Add(CreateEmptyRow(""));
+                FixedTimeRowsPanel.Children.Add(Render_Log_Row.CreateFixedEmptyCell());
+                LogRowsPanel.Children.Add(Render_Log_Row.CreateEmptyRow(""));
             }
             catch
             {
@@ -553,8 +275,8 @@ namespace DbViewer
             FixedTimeRowsPanel.Children.Clear();
             LogRowsPanel.Children.Clear();
 
-            FixedTimeRowsPanel.Children.Add(CreateFixedEmptyCell());
-            LogRowsPanel.Children.Add(CreateEmptyRow(emptyRowMessage));
+            FixedTimeRowsPanel.Children.Add(Render_Log_Row.CreateFixedEmptyCell());
+            LogRowsPanel.Children.Add(Render_Log_Row.CreateEmptyRow(emptyRowMessage));
         }
 
         private static void ShowRecoverySourceMissingMessage()
@@ -572,8 +294,8 @@ namespace DbViewer
             FixedTimeRowsPanel.Children.Clear();
             LogRowsPanel.Children.Clear();
 
-            FixedTimeRowsPanel.Children.Add(CreateFixedEmptyCell());
-            LogRowsPanel.Children.Add(CreateEmptyRow("이력 파일 복구에 실패했습니다."));
+            FixedTimeRowsPanel.Children.Add(Render_Log_Row.CreateFixedEmptyCell());
+            LogRowsPanel.Children.Add(Render_Log_Row.CreateEmptyRow("이력 파일 복구에 실패했습니다."));
 
             string message = "이력 파일 복구에 실패했습니다.";
 
@@ -678,12 +400,7 @@ namespace DbViewer
 
         private async Task OpenAutoHistoryFileAsync()
         {
-            string autoDbPath = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.Windows),
-                "Log.db"
-            );
-
-            if (!File.Exists(autoDbPath))
+            if (!Auto_File_Find.TryFindHistoryFile(out string autoDbPath))
             {
                 ShowHistoryFileNotFoundMessage("파일 자동 탐색");
 
@@ -695,21 +412,6 @@ namespace DbViewer
 
         private async Task OpenHistoryFileByPathAsync(string dbPath, string errorTitle = "파일 찾기")
         {
-            string extension = Path.GetExtension(dbPath).ToLowerInvariant();
-
-            if (extension == ".txt")
-            {
-                await OpenTxtHistoryFileByPathAsync(dbPath, errorTitle);
-                return;
-            }
-
-            if (extension != ".db")
-            {
-                ShowUnsupportedHistoryFileMessage(errorTitle);
-
-                return;
-            }
-
             try
             {
                 CancelRunningJobs();
@@ -720,19 +422,26 @@ namespace DbViewer
 
                 ResetCategoryCountText();
                 ClearQueryCaches();
-                SetLoadingState("이력 파일을 복사하는 중입니다...");
+                SetLoadingState("이력 파일을 여는 중입니다...");
 
-                string copiedDbPath = await Task.Run(() =>
-                    DbCopyService.CopyDbToTemp(dbPath)
+                HistoryOpenResult result = await Task.Run(() =>
+                    Open_History_File.Open(dbPath)
                 );
 
-                SetLoadingState("이력 파일을 확인하는 중입니다...");
+                if (result.Status == HistoryOpenStatus.UnsupportedFileType)
+                {
+                    ShowUnsupportedHistoryFileMessage(errorTitle);
+                    return;
+                }
 
-                DbOpenCheckResult result = await Task.Run(() =>
-                    CheckHistoryDatabaseFile(copiedDbPath)
-                );
+                if (result.Status == HistoryOpenStatus.InvalidTxtFile)
+                {
+                    ResetOpenedHistoryState("잘못된 텍스트 이력 파일입니다.");
+                    ShowInvalidTxtHistoryFileMessage(errorTitle);
+                    return;
+                }
 
-                if (!result.Success)
+                if (result.Status != HistoryOpenStatus.Success)
                 {
                     ResetOpenedHistoryState("잘못된 DB 이력 파일입니다.");
                     ShowInvalidDbHistoryFileMessage(errorTitle);
@@ -740,7 +449,7 @@ namespace DbViewer
                     return;
                 }
 
-                _repository = new LogRepository(copiedDbPath);
+                _repository = new LogRepository(result.DbPath);
 
                 _totalCount = result.TotalCount;
                 _totalPages = CalculateTotalPages(_totalCount);
@@ -771,584 +480,6 @@ namespace DbViewer
                 ResetOpenedHistoryState("잘못된 DB 이력 파일입니다.");
                 ShowInvalidDbHistoryFileMessage(errorTitle);
             }
-        }
-
-        private static DbOpenCheckResult CheckHistoryDatabaseFile(string dbPath)
-        {
-            if (string.IsNullOrWhiteSpace(dbPath))
-            {
-                return new DbOpenCheckResult
-                {
-                    Success = false,
-                    ErrorMessage = "DB 파일 경로가 비어 있습니다."
-                };
-            }
-
-            if (!File.Exists(dbPath))
-            {
-                return new DbOpenCheckResult
-                {
-                    Success = false,
-                    ErrorMessage = "DB 파일을 찾을 수 없습니다."
-                };
-            }
-
-            try
-            {
-                using SqliteConnection connection = new($"Data Source={dbPath};Mode=ReadOnly");
-                connection.Open();
-
-                string integrityResult = ExecuteScalarText(
-                    connection,
-                    "PRAGMA integrity_check;"
-                );
-
-                if (!string.Equals(integrityResult, "ok", StringComparison.OrdinalIgnoreCase))
-                {
-                    return new DbOpenCheckResult
-                    {
-                        Success = false,
-                        ErrorMessage = $"DB 무결성 검사 실패: {integrityResult}"
-                    };
-                }
-
-                bool hasLogTable = string.Equals(
-                    ExecuteScalarText(
-                        connection,
-                        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'Log' LIMIT 1;"
-                    ),
-                    "Log",
-                    StringComparison.OrdinalIgnoreCase
-                );
-
-                if (!hasLogTable)
-                {
-                    return new DbOpenCheckResult
-                    {
-                        Success = false,
-                        ErrorMessage = "Log 테이블이 없습니다."
-                    };
-                }
-
-                List<string> columns = GetTableColumns(connection, "Log");
-
-                string[] requiredColumns =
-                {
-                    "ID",
-                    "GRP",
-                    "DTIME",
-                    "Type",
-                    "Action",
-                    "Section",
-                    "Contents",
-                    "Packet"
-                };
-
-                List<string> missingColumns = requiredColumns
-                    .Where(required => !columns.Contains(required, StringComparer.OrdinalIgnoreCase))
-                    .ToList();
-
-                if (missingColumns.Count > 0)
-                {
-                    return new DbOpenCheckResult
-                    {
-                        Success = false,
-                        ErrorMessage = $"Log 테이블 컬럼이 맞지 않습니다. 누락 컬럼: {string.Join(", ", missingColumns)}"
-                    };
-                }
-
-                int totalCount = ExecuteScalarInt(
-                    connection,
-                    "SELECT COUNT(*) FROM Log;"
-                );
-
-                string startDate = ExecuteScalarText(
-                    connection,
-                    "SELECT SUBSTR(DTIME, 1, 10) FROM Log WHERE DTIME IS NOT NULL AND LENGTH(DTIME) >= 10 ORDER BY DTIME ASC, ID ASC LIMIT 1;"
-                );
-
-                string endDate = ExecuteScalarText(
-                    connection,
-                    "SELECT SUBSTR(DTIME, 1, 10) FROM Log WHERE DTIME IS NOT NULL AND LENGTH(DTIME) >= 10 ORDER BY DTIME DESC, ID DESC LIMIT 1;"
-                );
-
-                return new DbOpenCheckResult
-                {
-                    Success = true,
-                    TotalCount = totalCount,
-                    StartDate = startDate,
-                    EndDate = endDate
-                };
-            }
-            catch (SqliteException ex)
-            {
-                return new DbOpenCheckResult
-                {
-                    Success = false,
-                    ErrorMessage = $"SQLite 파일을 읽을 수 없습니다. {ex.Message}"
-                };
-            }
-            catch (Exception ex)
-            {
-                return new DbOpenCheckResult
-                {
-                    Success = false,
-                    ErrorMessage = ex.Message
-                };
-            }
-        }
-
-        private static string ExecuteScalarText(SqliteConnection connection, string commandText)
-        {
-            using SqliteCommand command = connection.CreateCommand();
-            command.CommandText = commandText;
-
-            object? result = command.ExecuteScalar();
-
-            return result?.ToString()?.Trim() ?? "";
-        }
-
-        private static int ExecuteScalarInt(SqliteConnection connection, string commandText)
-        {
-            using SqliteCommand command = connection.CreateCommand();
-            command.CommandText = commandText;
-
-            object? result = command.ExecuteScalar();
-
-            if (result == null)
-            {
-                return 0;
-            }
-
-            return Convert.ToInt32(result);
-        }
-
-        private static List<string> GetTableColumns(SqliteConnection connection, string tableName)
-        {
-            List<string> columns = new();
-
-            using SqliteCommand command = connection.CreateCommand();
-            command.CommandText = $"PRAGMA table_info({tableName});";
-
-            using SqliteDataReader reader = command.ExecuteReader();
-
-            while (reader.Read())
-            {
-                string columnName = reader["name"]?.ToString() ?? "";
-
-                if (!string.IsNullOrWhiteSpace(columnName))
-                {
-                    columns.Add(columnName);
-                }
-            }
-
-            return columns;
-        }
-        private async Task OpenTxtHistoryFileByPathAsync(string txtPath, string errorTitle)
-        {
-            try
-            {
-                CancelRunningJobs();
-                ClearMoveTargetHighlight();
-
-                _selectedCategories.Clear();
-                UpdateCategoryCardActiveStates();
-
-                ResetCategoryCountText();
-                ClearQueryCaches();
-
-                SetLoadingState("텍스트 이력 파일을 변환하는 중입니다...");
-
-                TxtConvertResult convertResult = await Task.Run(() =>
-                    ConvertTxtHistoryToTempDb(txtPath)
-                );
-
-                if (!convertResult.Success)
-                {
-                    ResetOpenedHistoryState("잘못된 텍스트 이력 파일입니다.");
-                    ShowInvalidTxtHistoryFileMessage(errorTitle);
-
-                    return;
-                }
-
-                string convertedDbPath = convertResult.DbPath;
-
-                SetLoadingState("텍스트 이력 파일을 확인하는 중입니다...");
-
-                DbOpenCheckResult result = await Task.Run(() =>
-                    CheckHistoryDatabaseFile(convertedDbPath)
-                );
-
-                if (!result.Success)
-                {
-                    ResetOpenedHistoryState("잘못된 텍스트 이력 파일입니다.");
-                    ShowInvalidTxtHistoryFileMessage(errorTitle);
-
-                    return;
-                }
-
-                _repository = new LogRepository(convertedDbPath);
-
-                _totalCount = result.TotalCount;
-                _totalPages = CalculateTotalPages(_totalCount);
-
-                StartDateText.Text = result.StartDate;
-                EndDateText.Text = result.EndDate;
-
-                ApplyDbDateRange(result.StartDate, result.EndDate);
-                UpdateDateArrowVisibility();
-
-                _currentMode = "all";
-                _currentKeyword = "";
-                _currentStartDate = "";
-                _currentEndDate = "";
-                _currentPage = 1;
-                _activeRowsCacheKey = "all";
-
-                TotalLogCountText.Text = _totalCount.ToString("N0");
-
-                UpdateCategoryCardActiveStates();
-
-                StartBackgroundCategoryCache();
-
-                await LoadCurrentPageAsync(showLoading: false);
-            }
-            catch
-            {
-                ResetOpenedHistoryState("잘못된 텍스트 이력 파일입니다.");
-                ShowInvalidTxtHistoryFileMessage(errorTitle);
-            }
-        }
-
-        private static TxtConvertResult ConvertTxtHistoryToTempDb(string txtPath)
-        {
-            if (string.IsNullOrWhiteSpace(txtPath))
-            {
-                return new TxtConvertResult
-                {
-                    Success = false,
-                    ErrorMessage = "텍스트 파일 경로가 비어 있습니다."
-                };
-            }
-
-            if (!File.Exists(txtPath))
-            {
-                return new TxtConvertResult
-                {
-                    Success = false,
-                    ErrorMessage = "텍스트 파일을 찾을 수 없습니다."
-                };
-            }
-
-            List<LogRow> rows;
-
-            try
-            {
-                rows = ReadTxtHistoryRows(txtPath);
-            }
-            catch (Exception ex)
-            {
-                return new TxtConvertResult
-                {
-                    Success = false,
-                    ErrorMessage = $"텍스트 파일을 읽는 중 오류가 발생했습니다. {ex.Message}"
-                };
-            }
-
-            if (rows.Count == 0)
-            {
-                return new TxtConvertResult
-                {
-                    Success = false,
-                    ErrorMessage = "텍스트 파일에서 이력 데이터를 찾을 수 없습니다."
-                };
-            }
-
-            try
-            {
-                string tempDir = Path.Combine(
-                    Path.GetTempPath(),
-                    "DbViewer",
-                    "TxtHistory"
-                );
-
-                Directory.CreateDirectory(tempDir);
-
-                string tempDbPath = Path.Combine(
-                    tempDir,
-                    $"TxtHistory_{DateTime.Now:yyyyMMdd_HHmmss_fff}.db"
-                );
-
-                if (File.Exists(tempDbPath))
-                {
-                    File.Delete(tempDbPath);
-                }
-
-                using SqliteConnection connection = new($"Data Source={tempDbPath}");
-                connection.Open();
-
-                using SqliteCommand createCommand = connection.CreateCommand();
-                createCommand.CommandText =
-                    "CREATE TABLE Log (" +
-                    "ID INTEGER PRIMARY KEY, " +
-                    "GRP TEXT, " +
-                    "DTIME TEXT, " +
-                    "Type TEXT, " +
-                    "Action TEXT, " +
-                    "Section TEXT, " +
-                    "Contents TEXT, " +
-                    "Packet TEXT" +
-                    ");";
-                createCommand.ExecuteNonQuery();
-
-                using SqliteTransaction transaction = connection.BeginTransaction();
-
-                using SqliteCommand insertCommand = connection.CreateCommand();
-                insertCommand.Transaction = transaction;
-                insertCommand.CommandText =
-                    "INSERT INTO Log " +
-                    "(ID, GRP, DTIME, Type, Action, Section, Contents, Packet) " +
-                    "VALUES " +
-                    "($id, $grp, $dtime, $type, $action, $section, $contents, $packet);";
-
-                SqliteParameter idParam = insertCommand.Parameters.Add("$id", SqliteType.Integer);
-                SqliteParameter grpParam = insertCommand.Parameters.Add("$grp", SqliteType.Text);
-                SqliteParameter dtimeParam = insertCommand.Parameters.Add("$dtime", SqliteType.Text);
-                SqliteParameter typeParam = insertCommand.Parameters.Add("$type", SqliteType.Text);
-                SqliteParameter actionParam = insertCommand.Parameters.Add("$action", SqliteType.Text);
-                SqliteParameter sectionParam = insertCommand.Parameters.Add("$section", SqliteType.Text);
-                SqliteParameter contentsParam = insertCommand.Parameters.Add("$contents", SqliteType.Text);
-                SqliteParameter packetParam = insertCommand.Parameters.Add("$packet", SqliteType.Text);
-
-                /*
-                 * TXT 파일은 보통 최신순으로 저장되어 있다.
-                 * LogRepository가 ORDER BY DTIME DESC, ID DESC로 읽는 경우,
-                 * 같은 초의 로그 순서를 최대한 TXT 원본 순서와 맞추기 위해
-                 * 먼저 나온 줄에 더 큰 ID를 부여한다.
-                 */
-                int total = rows.Count;
-
-                for (int i = 0; i < rows.Count; i++)
-                {
-                    LogRow row = rows[i];
-
-                    idParam.Value = total - i;
-                    grpParam.Value = row.Group;
-                    dtimeParam.Value = row.DTime;
-                    typeParam.Value = row.Type;
-                    actionParam.Value = row.Action;
-                    sectionParam.Value = row.Section;
-                    contentsParam.Value = row.Contents;
-                    packetParam.Value = row.Packet;
-
-                    insertCommand.ExecuteNonQuery();
-                }
-
-                transaction.Commit();
-
-                return new TxtConvertResult
-                {
-                    Success = true,
-                    DbPath = tempDbPath
-                };
-            }
-            catch (Exception ex)
-            {
-                return new TxtConvertResult
-                {
-                    Success = false,
-                    ErrorMessage = $"텍스트 이력을 DB로 변환하는 중 오류가 발생했습니다. {ex.Message}"
-                };
-            }
-        }
-
-        private static List<LogRow> ReadTxtHistoryRows(string txtPath)
-        {
-            string[] lines = ReadHistoryTextLines(txtPath);
-
-            List<LogRow> rows = new();
-
-            foreach (string line in lines)
-            {
-                LogRow? row = ParseTxtHistoryLine(line);
-
-                if (row == null)
-                {
-                    continue;
-                }
-
-                rows.Add(row);
-            }
-
-            return rows;
-        }
-
-        private static string[] ReadHistoryTextLines(string txtPath)
-        {
-            byte[] bytes = File.ReadAllBytes(txtPath);
-
-            string text;
-
-            if (bytes.Length >= 3 &&
-                bytes[0] == 0xEF &&
-                bytes[1] == 0xBB &&
-                bytes[2] == 0xBF)
-            {
-                text = Encoding.UTF8.GetString(bytes);
-            }
-            else
-            {
-                try
-                {
-                    UTF8Encoding strictUtf8 = new(
-                        encoderShouldEmitUTF8Identifier: false,
-                        throwOnInvalidBytes: true
-                    );
-
-                    text = strictUtf8.GetString(bytes);
-                }
-                catch
-                {
-                    Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
-                    text = Encoding.GetEncoding(949).GetString(bytes);
-                }
-            }
-
-            return text
-                .Replace("\r\n", "\n")
-                .Replace("\r", "\n")
-                .Split('\n');
-        }
-
-        private static LogRow? ParseTxtHistoryLine(string line)
-        {
-            if (string.IsNullOrWhiteSpace(line))
-            {
-                return null;
-            }
-
-            string trimmedLine = line.Trim();
-
-            if (!Regex.IsMatch(
-                    trimmedLine,
-                    @"^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}"
-                ))
-            {
-                return null;
-            }
-
-            string[] parts = Regex
-                .Split(trimmedLine, @"\s{2,}")
-                .Where(part => !string.IsNullOrWhiteSpace(part))
-                .Select(part => part.Trim())
-                .ToArray();
-
-            if (parts.Length < 3)
-            {
-                return null;
-            }
-
-            string dtime = parts[0];
-            string type = parts[1];
-            string action = "";
-            string section = "";
-            string contents = "";
-
-            if (parts.Length >= 5)
-            {
-                action = parts[2];
-                section = parts[3];
-                contents = string.Join(" ", parts.Skip(4)).Trim();
-            }
-            else if (parts.Length == 4)
-            {
-                if (IsKnownTxtAction(parts[2]) && !LooksLikeTxtSection(parts[2]))
-                {
-                    action = parts[2];
-                    section = parts[3];
-                    contents = "";
-                }
-                else
-                {
-                    action = "";
-                    section = parts[2];
-                    contents = parts[3];
-                }
-            }
-            else if (parts.Length == 3)
-            {
-                if (IsKnownTxtAction(parts[2]) && !LooksLikeTxtSection(parts[2]))
-                {
-                    action = parts[2];
-                    section = "";
-                    contents = "";
-                }
-                else
-                {
-                    action = "";
-                    section = parts[2];
-                    contents = "";
-                }
-            }
-
-            return new LogRow
-            {
-                Id = 0,
-                Group = "",
-                DTime = dtime,
-                Type = NormalizeTxtType(type),
-                Action = NormalizeTxtAction(action),
-                Section = section,
-                Contents = contents,
-                Packet = ""
-            };
-        }
-
-        private static string NormalizeTxtType(string value)
-        {
-            string type = value.Trim();
-
-            if (type == "MCC스위치")
-            {
-                return "MCC";
-            }
-
-            return type;
-        }
-
-        private static string NormalizeTxtAction(string value)
-        {
-            return value.Trim();
-        }
-
-        private static bool IsKnownTxtAction(string value)
-        {
-            string action = value.Trim();
-
-            return action is
-                "발생" or
-                "소거" or
-                "복구" or
-                "해제" or
-                "ON" or
-                "OFF" or
-                "기동" or
-                "정지" or
-                "자동" or
-                "수동";
-        }
-
-        private static bool LooksLikeTxtSection(string value)
-        {
-            string section = value.Trim();
-
-            return Regex.IsMatch(section, @"^\d{2}#") ||
-                   section.Contains("수신기") ||
-                   section.Contains("중계반") ||
-                   section.Contains("계통") ||
-                   section.Contains("중계기") ||
-                   section.Contains("MCC") ||
-                   section.Contains("AN");
         }
 
         private async Task LoadAllFirstPageAsync()
@@ -1858,8 +989,8 @@ namespace DbViewer
                 _highlightedRowIndexInPage = null;
                 FixedTimeRowsPanel.Children.Clear();
                 LogRowsPanel.Children.Clear();
-                FixedTimeRowsPanel.Children.Add(CreateFixedEmptyCell());
-                LogRowsPanel.Children.Add(CreateEmptyRow("선택한 카테고리 내용을 계산하는 중입니다..."));
+                FixedTimeRowsPanel.Children.Add(Render_Log_Row.CreateFixedEmptyCell());
+                LogRowsPanel.Children.Add(Render_Log_Row.CreateEmptyRow("선택한 카테고리 내용을 계산하는 중입니다..."));
                 return;
             }
 
@@ -1991,31 +1122,42 @@ namespace DbViewer
                 ClearMoveTargetHighlight();
                 SetLoadingState("인쇄 파일을 만드는 중입니다...");
 
-                string conditionText = BuildPrintConditionText();
                 string mode = _currentMode;
                 string keyword = _currentKeyword;
                 string startDate = _currentStartDate;
                 string endDate = _currentEndDate;
                 string cacheKey = _activeRowsCacheKey;
                 List<string> selectedCategories = _selectedCategories.ToList();
+                List<LogRow>? selectedCategoryRows = mode == "category"
+                    ? GetSelectedCategoryRowsFromCache(selectedCategories)
+                    : null;
+                List<LogRow>? cachedRows = null;
+
+                if (mode == "date_cache")
+                {
+                    lock (_queryCacheLock)
+                    {
+                        if (_rowsCacheByKey.TryGetValue(cacheKey, out List<LogRow>? rows))
+                        {
+                            cachedRows = new List<LogRow>(rows);
+                        }
+                    }
+                }
 
                 List<string> savedPaths = await Task.Run(() =>
-                {
-                    List<LogRow> rows = GetCurrentRowsForPrintExport(
-                        mode,
-                        keyword,
-                        startDate,
-                        endDate,
-                        cacheKey,
-                        selectedCategories
-                    );
-
-                    return PrintHtmlExporter.Export(
-                        rows,
-                        "이력 내용",
-                        conditionText
-                    );
-                });
+                    Save_Print_File.Run(new SavePrintFileRequest
+                    {
+                        Repository = _repository,
+                        Mode = mode,
+                        Keyword = keyword,
+                        StartDate = startDate,
+                        EndDate = endDate,
+                        SelectedCategories = selectedCategories,
+                        CategoryDisplayNames = _categoryDisplayNames,
+                        SelectedCategoryRows = selectedCategoryRows,
+                        CachedRows = cachedRows
+                    })
+                );
 
                 await LoadCurrentPageAsync(showLoading: false, resetScroll: false);
 
@@ -2041,102 +1183,6 @@ namespace DbViewer
                     MessageBoxImage.Error
                 );
             }
-        }
-
-        private List<LogRow> GetCurrentRowsForPrintExport(
-            string mode,
-            string keyword,
-            string startDate,
-            string endDate,
-            string cacheKey,
-            List<string> selectedCategories)
-        {
-            if (_repository == null)
-            {
-                return new List<LogRow>();
-            }
-
-            if (mode == "category")
-            {
-                return GetSelectedCategoryRowsFromCache(selectedCategories);
-            }
-
-            if (mode == "date_cache")
-            {
-                lock (_queryCacheLock)
-                {
-                    if (_rowsCacheByKey.TryGetValue(cacheKey, out List<LogRow>? cachedRows))
-                    {
-                        return new List<LogRow>(cachedRows);
-                    }
-                }
-            }
-
-            if (mode == "date" || mode == "date_cache")
-            {
-                DateTime? filterStart = IsValidDate(startDate)
-                    ? DateTime.Parse(startDate).Date
-                    : null;
-
-                DateTime? filterEnd = IsValidDate(endDate)
-                    ? DateTime.Parse(endDate).Date.AddDays(1).AddTicks(-1)
-                    : null;
-
-                return _repository.StreamAllLogs()
-                    .Where(row => IsRowInDateRange(row, filterStart, filterEnd))
-                    .ToList();
-            }
-
-            if (mode == "search")
-            {
-                return _repository.StreamAllLogs()
-                    .Where(row => IsRowMatchedBySearchFields(row, keyword))
-                    .ToList();
-            }
-
-            return _repository.StreamAllLogs().ToList();
-        }
-
-        private string BuildPrintConditionText()
-        {
-            if (_currentMode == "category")
-            {
-                List<string> names = _selectedCategories
-                    .Select(category => _categoryDisplayNames.TryGetValue(category, out string? name)
-                        ? name
-                        : category)
-                    .ToList();
-
-                return names.Count == 0
-                    ? "카테고리: 선택 없음"
-                    : $"카테고리: {string.Join(", ", names)}";
-            }
-
-            if (_currentMode == "search")
-            {
-                return $"검색어: {_currentKeyword}";
-            }
-
-            if (_currentMode == "date" || _currentMode == "date_cache")
-            {
-                return $"기간: {_currentStartDate} ~ {_currentEndDate}";
-            }
-
-            return "전체 이력";
-        }
-
-        private static bool IsRowMatchedBySearchFields(LogRow row, string keyword)
-        {
-            if (string.IsNullOrWhiteSpace(keyword))
-            {
-                return true;
-            }
-
-            return row.Type.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
-                   row.Action.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
-                   row.Section.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
-                   row.Contents.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
-                   row.Packet.Contains(keyword, StringComparison.OrdinalIgnoreCase);
         }
 
         private async Task LoadDateFirstPageAsync()
@@ -2692,8 +1738,8 @@ namespace DbViewer
                 _highlightedRowIndexInPage = null;
                 FixedTimeRowsPanel.Children.Clear();
                 LogRowsPanel.Children.Clear();
-                FixedTimeRowsPanel.Children.Add(CreateFixedEmptyCell());
-                LogRowsPanel.Children.Add(CreateEmptyRow("이력 내용을 불러오는 중 오류가 발생했습니다."));
+                FixedTimeRowsPanel.Children.Add(Render_Log_Row.CreateFixedEmptyCell());
+                LogRowsPanel.Children.Add(Render_Log_Row.CreateEmptyRow("이력 내용을 불러오는 중 오류가 발생했습니다."));
                 RebuildPaginationButtons();
 
                 ShowLoadLogsFailedMessage();
@@ -2842,8 +1888,8 @@ namespace DbViewer
 
             if (rows.Count == 0)
             {
-                FixedTimeRowsPanel.Children.Add(CreateFixedEmptyCell());
-                LogRowsPanel.Children.Add(CreateEmptyRow("표시할 이력 내용이 없습니다."));
+                FixedTimeRowsPanel.Children.Add(Render_Log_Row.CreateFixedEmptyCell());
+                LogRowsPanel.Children.Add(Render_Log_Row.CreateEmptyRow("표시할 이력 내용이 없습니다."));
                 return;
             }
 
@@ -2855,8 +1901,8 @@ namespace DbViewer
             {
                 for (int i = 0; i < rows.Count; i++)
                 {
-                    FixedTimeRowsPanel.Children.Add(CreateFixedTimeCell(rows[i], i));
-                    LogRowsPanel.Children.Add(CreateScrollableLogRow(rows[i], i));
+                    FixedTimeRowsPanel.Children.Add(Render_Log_Row.CreateFixedTimeCell(rows[i], i));
+                    LogRowsPanel.Children.Add(Render_Log_Row.CreateScrollableLogRow(rows[i], i));
                 }
 
                 if (highlightRowIndex.HasValue)
@@ -2906,8 +1952,8 @@ namespace DbViewer
 
                     for (int i = start; i < end; i++)
                     {
-                        FixedTimeRowsPanel.Children.Add(CreateFixedTimeCell(rows[i], i));
-                        LogRowsPanel.Children.Add(CreateScrollableLogRow(rows[i], i));
+                        FixedTimeRowsPanel.Children.Add(Render_Log_Row.CreateFixedTimeCell(rows[i], i));
+                        LogRowsPanel.Children.Add(Render_Log_Row.CreateScrollableLogRow(rows[i], i));
                     }
 
                     await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
@@ -3477,265 +2523,10 @@ namespace DbViewer
             FixedTimeRowsPanel.Children.Clear();
             LogRowsPanel.Children.Clear();
 
-            FixedTimeRowsPanel.Children.Add(CreateFixedEmptyCell());
-            LogRowsPanel.Children.Add(CreateEmptyRow(message));
+            FixedTimeRowsPanel.Children.Add(Render_Log_Row.CreateFixedEmptyCell());
+            LogRowsPanel.Children.Add(Render_Log_Row.CreateEmptyRow(message));
 
             RebuildPaginationButtons();
-        }
-
-        private UIElement CreateEmptyRow(string message)
-        {
-            Border border = new()
-            {
-                Height = 58,
-                Background = new SolidColorBrush(Color.FromRgb(255, 255, 255)),
-                BorderBrush = new SolidColorBrush(Color.FromRgb(221, 232, 242)),
-                BorderThickness = new Thickness(0, 0, 0, 1)
-            };
-
-            TextBlock text = new()
-            {
-                Text = message,
-                FontSize = 14,
-                Foreground = new SolidColorBrush(Color.FromRgb(80, 94, 120)),
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center
-            };
-
-            border.Child = text;
-            return border;
-        }
-
-        private UIElement CreateFixedEmptyCell()
-        {
-            Border border = new()
-            {
-                Height = 58,
-                Background = new SolidColorBrush(Color.FromRgb(255, 255, 255)),
-                BorderBrush = LogStyleMapper.GridLineBrush(),
-                BorderThickness = new Thickness(0, 0, 1, 1)
-            };
-
-            return border;
-        }
-
-        private UIElement CreateFixedTimeCell(LogRow row, int index)
-        {
-            string rowTag = LogClassifier.ClassifyRowTag(row, index);
-
-            Border border = new()
-            {
-                MinHeight = 50,
-                Background = LogStyleMapper.GetRowFill(rowTag),
-                BorderBrush = LogStyleMapper.GridLineBrush(),
-                BorderThickness = new Thickness(0, 0, 1, 1),
-                Padding = new Thickness(0),
-                SnapsToDevicePixels = true
-            };
-
-            Grid rootGrid = new()
-            {
-                SnapsToDevicePixels = true
-            };
-
-            TextBlock textBlock = new()
-            {
-                Text = row.DTime,
-                ToolTip = row.DTime,
-                FontSize = 13,
-                FontWeight = FontWeights.SemiBold,
-                Foreground = LogStyleMapper.GetRowText(rowTag),
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-                TextAlignment = TextAlignment.Center,
-                TextWrapping = TextWrapping.NoWrap,
-                TextTrimming = TextTrimming.CharacterEllipsis,
-                Margin = new Thickness(6, 6, 6, 6)
-            };
-
-            rootGrid.Children.Add(textBlock);
-
-            border.Child = rootGrid;
-
-            return border;
-        }
-
-        private UIElement CreateScrollableLogRow(LogRow row, int index)
-        {
-            string rowTag = LogClassifier.ClassifyRowTag(row, index);
-            List<string> badgeKeys = LogClassifier.GetBadgeKeys(row, rowTag);
-
-            Border border = new()
-            {
-                MinHeight = 50,
-                Width = 930,
-                Background = LogStyleMapper.GetRowFill(rowTag),
-                BorderBrush = LogStyleMapper.GridLineBrush(),
-                BorderThickness = new Thickness(0, 0, 0, 1),
-                Padding = new Thickness(0),
-                SnapsToDevicePixels = true
-            };
-
-            /*
-             * 빨간줄 Overlay용 Grid
-             * 이 Grid는 컬럼이 없어야 한다.
-             * 그래야 빨간줄이 행 전체 폭으로 쭉 깔린다.
-             */
-            Grid rootGrid = new()
-            {
-                SnapsToDevicePixels = true
-            };
-
-            /*
-             * 실제 내용용 Grid
-             * 여기만 컬럼을 가진다.
-             */
-            Grid contentGrid = new()
-            {
-                Width = 930,
-                SnapsToDevicePixels = true
-            };
-
-            contentGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(90) });   // 구분
-            contentGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(70) });   // 상태
-            contentGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(280) });  // 위치
-            contentGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(380) });  // 내용
-            contentGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(110) });  // 패킷
-
-            Brush textBrush = LogStyleMapper.GetRowText(rowTag);
-
-            AddFixedWidthCell(contentGrid, row.Type, 0, true, textBrush);
-            AddFixedWidthCell(contentGrid, row.Action, 1, true, textBrush);
-            AddFixedWidthCell(contentGrid, row.Section, 2, false, textBrush);
-            AddScrollableContentCell(contentGrid, row.Contents, 3, textBrush, badgeKeys);
-            AddFixedWidthCell(contentGrid, row.Packet, 4, false, textBrush, HorizontalAlignment.Left);
-
-            rootGrid.Children.Add(contentGrid);
-
-            border.Child = rootGrid;
-
-            return border;
-        }
-
-        private void AddFixedWidthCell(
-            Grid grid,
-            string text,
-            int column,
-            bool center,
-            Brush textBrush,
-            HorizontalAlignment? forceAlignment = null)
-        {
-            Border cellBorder = new()
-            {
-                BorderBrush = LogStyleMapper.GridLineBrush(),
-                BorderThickness = new Thickness(0, 0, 1, 0),
-                Padding = new Thickness(5, 6, 5, 6)
-            };
-
-            TextBlock textBlock = new()
-            {
-                Text = text,
-                ToolTip = text,
-                FontSize = 13,
-                FontWeight = FontWeights.SemiBold,
-                Foreground = textBrush,
-                VerticalAlignment = VerticalAlignment.Center,
-                TextWrapping = TextWrapping.NoWrap,
-                TextTrimming = TextTrimming.CharacterEllipsis
-            };
-
-            HorizontalAlignment finalAlignment = forceAlignment ??
-                                                 (center ? HorizontalAlignment.Center : HorizontalAlignment.Left);
-
-            textBlock.HorizontalAlignment = finalAlignment;
-
-            textBlock.TextAlignment = finalAlignment switch
-            {
-                HorizontalAlignment.Right => TextAlignment.Right,
-                HorizontalAlignment.Center => TextAlignment.Center,
-                _ => TextAlignment.Left
-            };
-
-            cellBorder.Child = textBlock;
-
-            Grid.SetColumn(cellBorder, column);
-            grid.Children.Add(cellBorder);
-        }
-
-        private void AddScrollableContentCell(
-            Grid grid,
-            string text,
-            int column,
-            Brush textBrush,
-            List<string> badgeKeys)
-        {
-            Border cellBorder = new()
-            {
-                BorderBrush = LogStyleMapper.GridLineBrush(),
-                BorderThickness = new Thickness(0, 0, 1, 0),
-                Padding = new Thickness(5, 6, 5, 6)
-            };
-
-            StackPanel panel = new()
-            {
-                Orientation = Orientation.Horizontal,
-                VerticalAlignment = VerticalAlignment.Center
-            };
-
-            foreach (string badgeKey in badgeKeys)
-            {
-                BadgeStyle? badge = LogStyleMapper.GetBadge(badgeKey);
-
-                if (badge == null)
-                {
-                    continue;
-                }
-
-                Border badgeBorder = new()
-                {
-                    MinWidth = 38,
-                    Height = 22,
-                    CornerRadius = new CornerRadius(6),
-                    Background = badge.Fill,
-                    BorderBrush = badge.Border,
-                    BorderThickness = new Thickness(1),
-                    Padding = new Thickness(7, 2, 7, 2),
-                    Margin = new Thickness(0, 0, 6, 0),
-                    VerticalAlignment = VerticalAlignment.Center
-                };
-
-                TextBlock badgeText = new()
-                {
-                    Text = badge.Label,
-                    Foreground = badge.Text,
-                    FontSize = 11,
-                    FontWeight = FontWeights.Bold,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center
-                };
-
-                badgeBorder.Child = badgeText;
-                panel.Children.Add(badgeBorder);
-            }
-
-            TextBlock contentText = new()
-            {
-                Text = text,
-                ToolTip = text,
-                FontSize = 13,
-                FontWeight = FontWeights.SemiBold,
-                Foreground = textBrush,
-                VerticalAlignment = VerticalAlignment.Center,
-                TextWrapping = TextWrapping.NoWrap,
-                TextTrimming = TextTrimming.CharacterEllipsis
-            };
-
-            panel.Children.Add(contentText);
-
-            cellBorder.Child = panel;
-
-            Grid.SetColumn(cellBorder, column);
-            grid.Children.Add(cellBorder);
         }
 
         private void RebuildPaginationButtons()

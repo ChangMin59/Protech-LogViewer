@@ -1,6 +1,6 @@
 ﻿using System.Windows.Media;
 
-namespace DbViewer.Services
+namespace DbViewer.Services.Common
 {
     public sealed class BadgeStyle
     {

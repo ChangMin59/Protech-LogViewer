@@ -1,7 +1,7 @@
 ﻿using System;
 using System.IO;
 
-namespace DbViewer.Services
+namespace DbViewer.Services.View
 {
     public static class DbCopyService
     {

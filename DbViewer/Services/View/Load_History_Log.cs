@@ -3,7 +3,7 @@ using Microsoft.Data.Sqlite;
 using System;
 using System.Collections.Generic;
 
-namespace DbViewer.Services
+namespace DbViewer.Services.View
 {
     public class LogRepository
     {

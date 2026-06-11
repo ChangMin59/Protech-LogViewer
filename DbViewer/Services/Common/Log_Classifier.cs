@@ -1,6 +1,6 @@
 ﻿using DbViewer.Models;
 
-namespace DbViewer.Services
+namespace DbViewer.Services.Common
 {
     public static class LogClassifier
     {
