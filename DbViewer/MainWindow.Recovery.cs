@@ -30,7 +30,6 @@ namespace DbViewer
                 _selectedCategories.Clear();
                 UpdateCategoryCardActiveStates();
 
-                SetLoadingState("이력 파일을 복구하는 중입니다...");
                 ShowRecoveryProgressOverlay();
 
                 StartRecoveryResult startResult = await Start_Recovery.RunAsync();
@@ -118,7 +117,7 @@ namespace DbViewer
             LogRowsPanel.Children.Clear();
 
             FixedTimeRowsPanel.Children.Add(Render_Log_Row.CreateFixedEmptyCell());
-            LogRowsPanel.Children.Add(Render_Log_Row.CreateEmptyRow("이력 파일 복구에 실패했습니다."));
+            LogRowsPanel.Children.Add(Render_Log_Row.CreateEmptyRow(""));
 
             string message = "이력 파일 복구에 실패했습니다.";
 

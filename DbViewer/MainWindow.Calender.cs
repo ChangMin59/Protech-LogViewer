@@ -55,8 +55,6 @@ namespace DbViewer
             _currentPage = 1;
             _activeRowsCacheKey = MakePeriodCacheKey(startDate, endDate);
 
-            SetLoadingState("선택한 기간의 이력 내용을 준비하는 중입니다...");
-
             List<LogRow>? cachedRows = await GetOrBuildRowsCacheAsync(startDate, endDate);
 
             if (cachedRows == null)

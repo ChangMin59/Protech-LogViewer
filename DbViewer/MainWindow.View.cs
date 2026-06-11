@@ -89,7 +89,6 @@ namespace DbViewer
 
                 ResetCategoryCountText();
                 ClearQueryCaches();
-                SetLoadingState("이력 파일을 여는 중입니다...");
 
                 HistoryOpenResult result = await Task.Run(() =>
                     Open_History_File.Open(dbPath)
@@ -104,7 +103,6 @@ namespace DbViewer
 
                 if (result.Status == HistoryOpenStatus.InvalidTxtFile)
                 {
-                    ResetOpenedHistoryState("잘못된 텍스트 이력 파일입니다.");
                     ShowInvalidTxtHistoryFileMessage(errorTitle);
                     BlockPointerInputAfterModal();
                     return;
@@ -112,7 +110,6 @@ namespace DbViewer
 
                 if (result.Status != HistoryOpenStatus.Success)
                 {
-                    ResetOpenedHistoryState("잘못된 DB 이력 파일입니다.");
                     ShowInvalidDbHistoryFileMessage(errorTitle);
                     BlockPointerInputAfterModal();
                     return;

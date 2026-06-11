@@ -34,7 +34,6 @@ namespace DbViewer
             try
             {
                 ClearMoveTargetHighlight();
-                SetLoadingState("인쇄 파일을 만드는 중입니다...");
 
                 string mode = _currentMode;
                 string keyword = _currentKeyword;

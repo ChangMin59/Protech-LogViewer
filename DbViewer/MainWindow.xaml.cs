@@ -716,10 +716,6 @@ namespace DbViewer
 
             try
             {
-                if (showLoading)
-                {
-                    SetLoadingState("이력 내용을 불러오는 중입니다...");
-                }
 
                 List<LogRow> rows;
 
@@ -1469,19 +1465,6 @@ namespace DbViewer
 
             _categoryCacheReady = false;
             _categoryCacheBuilding = false;
-        }
-
-        private void SetLoadingState(string message)
-        {
-            _highlightedRowIndexInPage = null;
-
-            FixedTimeRowsPanel.Children.Clear();
-            LogRowsPanel.Children.Clear();
-
-            FixedTimeRowsPanel.Children.Add(Render_Log_Row.CreateFixedEmptyCell());
-            LogRowsPanel.Children.Add(Render_Log_Row.CreateEmptyRow(message));
-
-            RebuildPaginationButtons();
         }
 
         private void UpdateCategoryCardActiveStates()
