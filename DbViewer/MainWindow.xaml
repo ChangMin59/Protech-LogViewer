@@ -740,14 +740,15 @@
                                               PanningMode="HorizontalOnly">
 
                                     <Grid x:Name="ScrollableHeaderGrid"
-                                          Width="930"
+                                          MinWidth="930"
+                                          Width="{Binding ActualWidth, ElementName=LogRowsPanel}"
                                           Height="44">
 
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="90"/>
                                             <ColumnDefinition Width="70"/>
                                             <ColumnDefinition Width="280"/>
-                                            <ColumnDefinition Width="380"/>
+                                            <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="110"/>
                                         </Grid.ColumnDefinitions>
 
@@ -831,7 +832,8 @@
                                 </ScrollViewer.Resources>
 
                                 <StackPanel x:Name="LogRowsPanel"
-                                            Width="930"/>
+                                            MinWidth="930"
+                                            Width="{Binding ActualWidth, ElementName=LogScrollViewer}"/>
                             </ScrollViewer>
                         </Grid>
                     </Border>

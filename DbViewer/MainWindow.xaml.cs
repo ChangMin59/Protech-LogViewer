@@ -16,6 +16,8 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using System.IO;
+using Forms = System.Windows.Forms;
+using Drawing = System.Drawing;
 
 namespace DbViewer
 {
@@ -89,6 +91,7 @@ namespace DbViewer
         private bool _isRecoveryRunning = false;
         private bool _isOpeningHistory = false;
         private bool _isExportRunning = false;
+        private bool _lockLargeScreenWindowSize = false;
         private int? _highlightedRowIndexInPage = null;
         private DateTime _lastPointerActionAt = DateTime.MinValue;
         private DateTime _ignorePointerUntil = DateTime.MinValue;
@@ -97,6 +100,10 @@ namespace DbViewer
         private const string MoveTargetLineTag = "MoveTargetLine";
         private const int PointerActionDebounceMilliseconds = 450;
         private const int ModalCloseInputGuardMilliseconds = 500;
+        private const int LargeScreenPhysicalHeightThreshold = 1900;
+        private const double LargeScreenLeftBorderOffset = 10.0;
+        private const double LargeScreenRightBorderOffset = 8.0;
+        private const double LargeScreenBottomOffset = -10.0;
 
         private readonly Dictionary<string, string> _categoryDisplayNames = new()
         {
@@ -127,10 +134,84 @@ namespace DbViewer
             InitializeComponent();
 
             RootGrid.Focusable = true;
+            SourceInitialized += (_, _) =>
+            {
+                if (IsLargePhysicalScreen())
+                {
+                    _lockLargeScreenWindowSize = true;
+                    ApplyInitialWindowSizeForLargeScreen();
+                    return;
+                }
+            };
+
+            StateChanged += (_, _) => KeepLargeScreenWindowNormal();
 
             InitializeEvents();
             InitializeDefaultText();
         }
+
+        private void ApplyInitialWindowSizeForLargeScreen()
+        {
+            if (!IsLargePhysicalScreen())
+            {
+                return;
+            }
+
+            Forms.Screen screen = Forms.Screen.FromPoint(Forms.Cursor.Position);
+            Drawing.Rectangle fullArea = screen.Bounds;
+            Drawing.Rectangle workArea = screen.WorkingArea;
+
+            if (fullArea.Width <= 0 || fullArea.Height <= 0)
+            {
+                return;
+            }
+
+            WindowState = WindowState.Normal;
+            ResizeMode = ResizeMode.NoResize;
+
+            Matrix transformFromDevice = PresentationSource.FromVisual(this)
+                ?.CompositionTarget
+                ?.TransformFromDevice
+                ?? Matrix.Identity;
+
+            Point fullTopLeft = transformFromDevice.Transform(new Point(fullArea.Left, fullArea.Top));
+            Point fullBottomRight = transformFromDevice.Transform(new Point(fullArea.Right, fullArea.Bottom));
+            Point workBottomRight = transformFromDevice.Transform(new Point(workArea.Right, workArea.Bottom));
+
+            double fullWidth = fullBottomRight.X - fullTopLeft.X;
+            double availableHeight = workBottomRight.Y - fullTopLeft.Y - LargeScreenBottomOffset;
+
+            Width = fullWidth + LargeScreenLeftBorderOffset + LargeScreenRightBorderOffset;
+            Height = Math.Min(fullBottomRight.Y - fullTopLeft.Y, availableHeight);
+            Left = fullTopLeft.X - LargeScreenLeftBorderOffset;
+            Top = fullTopLeft.Y;
+
+            MinWidth = Width;
+            MaxWidth = Width;
+            MinHeight = Height;
+            MaxHeight = Height;
+        }
+
+        private static bool IsLargePhysicalScreen()
+        {
+            return Forms.Screen.FromPoint(Forms.Cursor.Position).Bounds.Height > LargeScreenPhysicalHeightThreshold;
+        }
+
+        private void KeepLargeScreenWindowNormal()
+        {
+            if (!_lockLargeScreenWindowSize)
+            {
+                return;
+            }
+
+            if (WindowState == WindowState.Normal)
+            {
+                return;
+            }
+
+            WindowState = WindowState.Normal;
+        }
+
 
         private void InitializeDefaultText()
         {

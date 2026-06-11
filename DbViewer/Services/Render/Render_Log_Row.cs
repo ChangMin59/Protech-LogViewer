@@ -92,7 +92,8 @@ namespace DbViewer.Services.Render
             Border border = new()
             {
                 MinHeight = 50,
-                Width = 930,
+                MinWidth = 930,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
                 Background = LogStyleMapper.GetRowFill(rowTag),
                 BorderBrush = LogStyleMapper.GridLineBrush(),
                 BorderThickness = new Thickness(0, 0, 0, 1),
@@ -107,14 +108,15 @@ namespace DbViewer.Services.Render
 
             Grid contentGrid = new()
             {
-                Width = 930,
+                MinWidth = 930,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
                 SnapsToDevicePixels = true
             };
 
             contentGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(90) });
             contentGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(70) });
             contentGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(280) });
-            contentGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(380) });
+            contentGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             contentGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(110) });
 
             Brush textBrush = LogStyleMapper.GetRowText(rowTag);
