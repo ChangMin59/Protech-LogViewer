@@ -100,6 +100,7 @@ namespace DbViewer
 
         private void UpdatePageSizeDropdownStyle()
         {
+            SetPageSizeItemStyle(PageSize25Button, 25);
             SetPageSizeItemStyle(PageSize1000Button, 1000);
             SetPageSizeItemStyle(PageSize5000Button, 5000);
             SetPageSizeItemStyle(PageSize10000Button, 10000);

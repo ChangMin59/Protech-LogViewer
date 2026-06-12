@@ -70,6 +70,7 @@ namespace DbViewer
             };
 
             AttachPointerAction(PageSizeButton, TogglePageSizeDropdown);
+            AttachPageSizeButton(PageSize25Button, 25);
             AttachPageSizeButton(PageSize1000Button, 1000);
             AttachPageSizeButton(PageSize5000Button, 5000);
             AttachPageSizeButton(PageSize10000Button, 10000);

@@ -963,6 +963,10 @@
                 Effect="{StaticResource RealGlassButtonShadow}">
 
             <StackPanel>
+                <Border x:Name="PageSize25Button" Height="42" CornerRadius="12" Cursor="Hand" Margin="0,0,0,4">
+                    <TextBlock Text="25건" FontSize="15" FontWeight="Bold" Foreground="#23395D" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
+
                 <Border x:Name="PageSize1000Button" Height="42" CornerRadius="12" Cursor="Hand" Margin="0,0,0,4">
                     <TextBlock Text="1,000건" FontSize="15" FontWeight="Bold" Foreground="#23395D" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                 </Border>

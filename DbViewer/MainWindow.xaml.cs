@@ -35,7 +35,7 @@ namespace DbViewer
         private string _currentEndDate = "";
 
         private int _currentPage = 1;
-        private int _pageSize = 1000;
+        private int _pageSize = 25;
         private int _totalCount = 0;
         private int _totalPages = 1;
 
