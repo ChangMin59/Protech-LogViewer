@@ -260,7 +260,7 @@ namespace DbViewer
             {
                 Title = "이력 TXT 파일 저장",
                 InitialDirectory = GetExecutableDirectory(),
-                FileName = $"이력_{DateTime.Now:yyyyMMdd_HHmmss}.txt",
+                FileName = BuildDefaultTextExportFileName(),
                 AddExtension = true,
                 DefaultExt = ".txt",
                 CheckPathExists = true,
@@ -275,6 +275,98 @@ namespace DbViewer
             }
 
             return Path.GetFullPath(dialog.FileName);
+        }
+
+        private string BuildDefaultTextExportFileName()
+        {
+            string dateRangeText = BuildTextExportDateRangeText();
+            string categoryText = BuildTextExportCategorySuffix();
+
+            return SanitizeFileName($"이력_{dateRangeText}{categoryText}.txt");
+        }
+
+        private string BuildTextExportDateRangeText()
+        {
+            string mode = _currentMode == "category"
+                ? _baseModeBeforeCategory
+                : _currentMode;
+            string startDate = _currentMode == "category"
+                ? _baseStartDateBeforeCategory
+                : _currentStartDate;
+            string endDate = _currentMode == "category"
+                ? _baseEndDateBeforeCategory
+                : _currentEndDate;
+
+            if ((mode == "date_cache" || mode == "date") &&
+                TryFormatCompactDate(startDate, out string compactStart) &&
+                TryFormatCompactDate(endDate, out string compactEnd))
+            {
+                return $"{compactStart}~{compactEnd}";
+            }
+
+            if (_dbStartDate.HasValue && _dbEndDate.HasValue)
+            {
+                return $"{_dbStartDate.Value:yyMMdd}~{_dbEndDate.Value:yyMMdd}";
+            }
+
+            if (_repository != null)
+            {
+                try
+                {
+                    (string StartDate, string EndDate) range = _repository.GetLogDateRange();
+
+                    if (TryFormatCompactDate(range.StartDate, out string dbCompactStart) &&
+                        TryFormatCompactDate(range.EndDate, out string dbCompactEnd))
+                    {
+                        return $"{dbCompactStart}~{dbCompactEnd}";
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            return DateTime.Now.ToString("yyMMdd");
+        }
+
+        private string BuildTextExportCategorySuffix()
+        {
+            if (_currentMode != "category" || _selectedCategories.Count == 0)
+            {
+                return "";
+            }
+
+            List<string> categoryNames = _selectedCategories
+                .Select(category => _categoryDisplayNames.TryGetValue(category, out string? name)
+                    ? name
+                    : category)
+                .ToList();
+
+            return $"({string.Join("_", categoryNames)})";
+        }
+
+        private static bool TryFormatCompactDate(string value, out string compactDate)
+        {
+            if (DateTime.TryParse(value, out DateTime date))
+            {
+                compactDate = date.ToString("yyMMdd");
+                return true;
+            }
+
+            compactDate = "";
+            return false;
+        }
+
+        private static string SanitizeFileName(string fileName)
+        {
+            char[] invalidChars = Path.GetInvalidFileNameChars();
+
+            foreach (char invalidChar in invalidChars)
+            {
+                fileName = fileName.Replace(invalidChar, '_');
+            }
+
+            return fileName;
         }
 
         private string? SelectPrintOutputDirectory()
