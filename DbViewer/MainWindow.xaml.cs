@@ -368,27 +368,12 @@ namespace DbViewer
             {
                 ClearMoveTargetHighlight();
 
-                if (_currentMode != "all")
+                if (_currentMode == "category")
                 {
                     _selectedCategories.Clear();
                     UpdateCategoryCardActiveStates();
 
-                    _currentMode = "all";
-                    _currentKeyword = "";
-                    _currentStartDate = "";
-                    _currentEndDate = "";
-                    _currentPage = 1;
-                    _activeRowsCacheKey = "all";
-
-                    _totalCount = await Task.Run(() => _repository.CountAllLogs());
-                    _totalPages = CalculateTotalPages(_totalCount);
-
-                    TotalLogCountText.Text = _totalCount.ToString("N0");
-
-                    SaveBaseQueryState();
-
-                    await LoadCurrentPageAsync(showLoading: false, resetScroll: true);
-
+                    await RestoreBaseQueryAfterCategoryClearAsync();
                     return;
                 }
 

@@ -32,7 +32,7 @@ namespace DbViewer
             });
             AttachPointerAction(ModeToggleButton, ToggleMoveModeAsync);
 
-            AttachPointerAction(TotalLogButton, LoadAllFirstPageAsync);
+            AttachPointerAction(TotalLogButton, LoadTotalLogButtonAsync);
 
             AttachCategoryButton(FireLogButton, "fire");
             AttachCategoryButton(AlarmLogButton, "alarm");

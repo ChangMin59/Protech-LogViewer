@@ -182,6 +182,39 @@ namespace DbViewer
             await LoadCurrentPageAsync(showLoading: false);
         }
 
+        private async Task LoadTotalLogButtonAsync()
+        {
+            if (_repository == null)
+            {
+                return;
+            }
+
+            ClearMoveTargetHighlight();
+
+            if (_currentMode == "category")
+            {
+                _selectedCategories.Clear();
+                UpdateCategoryCardActiveStates();
+
+                await RestoreBaseQueryAfterCategoryClearAsync();
+                return;
+            }
+
+            if (_currentMode == "date_cache" ||
+                _currentMode == "date" ||
+                _currentMode == "search")
+            {
+                _selectedCategories.Clear();
+                UpdateCategoryCardActiveStates();
+
+                _currentPage = 1;
+                await LoadCurrentPageAsync(showLoading: false);
+                return;
+            }
+
+            await LoadAllFirstPageAsync();
+        }
+
         private void ResetOpenedHistoryState(string emptyRowMessage)
         {
             _repository = null;
