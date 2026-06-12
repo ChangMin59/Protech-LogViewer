@@ -417,7 +417,7 @@ namespace DbViewer
 
                 RestoreMoveBaseModeIfNeeded();
 
-                double targetOffset = result.RowIndexInPage * LogRowVisualHeight;
+                double targetOffset = CalculateMoveTargetBottomOffset(result.RowIndexInPage);
 
                 /*
                  * 판매용 기준 핵심:
@@ -630,6 +630,7 @@ namespace DbViewer
 
             bool anchorFound = false;
             int scopedIndex = -1;
+            MoveTargetResult? lastConsecutiveTarget = null;
 
             foreach (LogRow row in _repository.StreamAllLogs())
             {
@@ -652,16 +653,22 @@ namespace DbViewer
 
                 string rowTag = LogClassifier.ClassifyRowTag(row, scopedIndex);
                 List<string> categories = LogClassifier.GetCategoryKeys(row, rowTag);
+                bool matchesCategory = categories.Contains(category);
 
-                if (!categories.Contains(category))
+                if (!matchesCategory)
                 {
+                    if (lastConsecutiveTarget != null)
+                    {
+                        return lastConsecutiveTarget;
+                    }
+
                     continue;
                 }
 
                 int pageNumber = scopedIndex / _pageSize + 1;
                 int rowIndexInPage = scopedIndex % _pageSize;
 
-                return new MoveTargetResult
+                lastConsecutiveTarget = new MoveTargetResult
                 {
                     RowId = row.Id,
                     PageNumber = pageNumber,
@@ -669,7 +676,21 @@ namespace DbViewer
                 };
             }
 
-            return null;
+            return lastConsecutiveTarget;
+        }
+
+        private double CalculateMoveTargetBottomOffset(int rowIndexInPage)
+        {
+            double viewportHeight = LogScrollViewer.ViewportHeight;
+
+            if (viewportHeight <= 0)
+            {
+                viewportHeight = LogScrollViewer.ActualHeight;
+            }
+
+            double targetRowBottom = (rowIndexInPage + 1) * LogRowVisualHeight;
+
+            return Math.Max(0, targetRowBottom - viewportHeight);
         }
         private bool IsRowInMoveScope(
             LogRow row,
