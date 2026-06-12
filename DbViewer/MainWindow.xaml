@@ -1187,5 +1187,47 @@
                 </Border>
             </Grid>
         </Border>
+
+        <Border x:Name="MoveProgressOverlay"
+                Background="#66000000"
+                Visibility="Collapsed"
+                Panel.ZIndex="2200">
+
+            <Grid>
+                <Border Width="420"
+                        Height="190"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        CornerRadius="24"
+                        Background="#F8FFFFFF"
+                        BorderBrush="#E6FFFFFF"
+                        BorderThickness="1"
+                        Padding="26"
+                        Effect="{StaticResource RealGlassButtonShadow}">
+
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="로그 이동 중"
+                                   FontSize="24"
+                                   FontWeight="Bold"
+                                   Foreground="#0E2448"
+                                   HorizontalAlignment="Center"
+                                   Margin="0,0,0,12"/>
+
+                        <TextBlock x:Name="MoveProgressDescriptionText"
+                                   Text="다음 로그를 찾고 있습니다."
+                                   FontSize="15"
+                                   FontWeight="SemiBold"
+                                   Foreground="#506078"
+                                   HorizontalAlignment="Center"
+                                   Margin="0,0,0,20"/>
+
+                        <ProgressBar Height="12"
+                                     IsIndeterminate="True"
+                                     Foreground="#FF5A43"
+                                     Background="#E8EEF6"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Border>
     </Grid>
 </Window>

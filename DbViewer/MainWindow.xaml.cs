@@ -502,16 +502,18 @@ namespace DbViewer
 
             try
             {
+                string categoryName = _categoryDisplayNames.TryGetValue(category, out string? name)
+                    ? name
+                    : category;
+
+                ShowMoveProgressOverlay(categoryName);
+
                 LogRow? anchorRow = GetLastVisibleAnchorRow();
 
                 if (anchorRow == null)
                 {
                     return;
                 }
-
-                string categoryName = _categoryDisplayNames.TryGetValue(category, out string? name)
-                    ? name
-                    : category;
 
                 MoveTargetResult? result = await Task.Run(() =>
                     FindNextCategoryLogPosition(category, anchorRow)
@@ -569,8 +571,20 @@ namespace DbViewer
             }
             finally
             {
+                HideMoveProgressOverlay();
                 _isMoveNavigationRunning = false;
             }
+        }
+
+        private void ShowMoveProgressOverlay(string categoryName)
+        {
+            MoveProgressDescriptionText.Text = $"다음 {categoryName} 로그를 찾고 있습니다.";
+            MoveProgressOverlay.Visibility = Visibility.Visible;
+        }
+
+        private void HideMoveProgressOverlay()
+        {
+            MoveProgressOverlay.Visibility = Visibility.Collapsed;
         }
 
         private void ApplyMoveTargetHighlight(int rowIndexInPage)
