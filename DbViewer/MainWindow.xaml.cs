@@ -398,6 +398,13 @@ namespace DbViewer
 
         private async Task HandleCategoryButtonAsync(string category)
         {
+            if (IsCategoryEmptyForCurrentScope(category))
+            {
+                ShowEmptyCategoryMessage(category);
+                BlockPointerInputAfterModal();
+                return;
+            }
+
             if (_isMoveMode)
             {
                 await MoveToNextCategoryLogAsync(category);
@@ -405,6 +412,30 @@ namespace DbViewer
             }
 
             await ToggleCategoryAsync(category);
+        }
+
+        private bool IsCategoryEmptyForCurrentScope(string category)
+        {
+            lock (_categoryCacheLock)
+            {
+                return _categoryCacheReady &&
+                       _categoryCache.TryGetValue(category, out List<LogRow>? rows) &&
+                       rows.Count == 0;
+            }
+        }
+
+        private void ShowEmptyCategoryMessage(string category)
+        {
+            string categoryName = _categoryDisplayNames.TryGetValue(category, out string? name)
+                ? name
+                : category;
+
+            MessageBox.Show(
+                $"현재 조회 조건에 {categoryName} 로그가 없습니다.",
+                "이력 조회",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information
+            );
         }
         private async Task ToggleCategoryAsync(string category)
         {
