@@ -7,12 +7,14 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
 using System.IO;
@@ -92,6 +94,12 @@ namespace DbViewer
         private bool _isOpeningHistory = false;
         private bool _isExportRunning = false;
         private bool _lockLargeScreenWindowSize = false;
+        private bool _largeScreenFixedBoundsReady = false;
+        private HwndSource? _largeScreenHwndSource;
+        private int _largeScreenDeviceLeft = 0;
+        private int _largeScreenDeviceTop = 0;
+        private int _largeScreenDeviceWidth = 0;
+        private int _largeScreenDeviceHeight = 0;
         private int? _highlightedRowIndexInPage = null;
         private bool _isVirtualRenderingActive = false;
         private int _virtualStartIndex = -1;
@@ -108,6 +116,9 @@ namespace DbViewer
         private const double LargeScreenLeftBorderOffset = 10.0;
         private const double LargeScreenRightBorderOffset = 8.0;
         private const double LargeScreenBottomOffset = -10.0;
+        private const int WmWindowPositionChanging = 0x0046;
+        private const uint SwpNoSize = 0x0001;
+        private const uint SwpNoMove = 0x0002;
 
         private readonly Dictionary<string, string> _categoryDisplayNames = new()
         {
@@ -141,12 +152,21 @@ namespace DbViewer
             RootGrid.Focusable = true;
             SourceInitialized += (_, _) =>
             {
+                _largeScreenHwndSource = PresentationSource.FromVisual(this) as HwndSource;
+                _largeScreenHwndSource?.AddHook(LargeScreenWindowProc);
+
                 if (IsLargePhysicalScreen())
                 {
                     _lockLargeScreenWindowSize = true;
                     ApplyInitialWindowSizeForLargeScreen();
                     return;
                 }
+            };
+
+            Closed += (_, _) =>
+            {
+                _largeScreenHwndSource?.RemoveHook(LargeScreenWindowProc);
+                _largeScreenHwndSource = null;
             };
 
             StateChanged += (_, _) => KeepLargeScreenWindowNormal();
@@ -185,16 +205,81 @@ namespace DbViewer
 
             double fullWidth = fullBottomRight.X - fullTopLeft.X;
             double availableHeight = workBottomRight.Y - fullTopLeft.Y - LargeScreenBottomOffset;
+            double fixedWidth = fullWidth + LargeScreenLeftBorderOffset + LargeScreenRightBorderOffset;
+            double fixedHeight = Math.Min(fullBottomRight.Y - fullTopLeft.Y, availableHeight);
+            double fixedLeft = fullTopLeft.X - LargeScreenLeftBorderOffset;
+            double fixedTop = fullTopLeft.Y;
 
-            Width = fullWidth + LargeScreenLeftBorderOffset + LargeScreenRightBorderOffset;
-            Height = Math.Min(fullBottomRight.Y - fullTopLeft.Y, availableHeight);
-            Left = fullTopLeft.X - LargeScreenLeftBorderOffset;
-            Top = fullTopLeft.Y;
+            SaveLargeScreenFixedDeviceBounds(fixedLeft, fixedTop, fixedWidth, fixedHeight);
+
+            Width = fixedWidth;
+            Height = fixedHeight;
+            Left = fixedLeft;
+            Top = fixedTop;
 
             MinWidth = Width;
             MaxWidth = Width;
             MinHeight = Height;
             MaxHeight = Height;
+        }
+
+        private void SaveLargeScreenFixedDeviceBounds(
+            double left,
+            double top,
+            double width,
+            double height)
+        {
+            Matrix transformToDevice = PresentationSource.FromVisual(this)
+                ?.CompositionTarget
+                ?.TransformToDevice
+                ?? Matrix.Identity;
+
+            Point deviceTopLeft = transformToDevice.Transform(new Point(left, top));
+            Point deviceBottomRight = transformToDevice.Transform(new Point(left + width, top + height));
+
+            _largeScreenDeviceLeft = (int)Math.Round(deviceTopLeft.X);
+            _largeScreenDeviceTop = (int)Math.Round(deviceTopLeft.Y);
+            _largeScreenDeviceWidth = (int)Math.Round(deviceBottomRight.X - deviceTopLeft.X);
+            _largeScreenDeviceHeight = (int)Math.Round(deviceBottomRight.Y - deviceTopLeft.Y);
+            _largeScreenFixedBoundsReady = true;
+        }
+
+        private nint LargeScreenWindowProc(
+            nint hwnd,
+            int msg,
+            nint wParam,
+            nint lParam,
+            ref bool handled)
+        {
+            if (msg != WmWindowPositionChanging ||
+                !_lockLargeScreenWindowSize ||
+                !_largeScreenFixedBoundsReady ||
+                lParam == nint.Zero)
+            {
+                return nint.Zero;
+            }
+
+            WindowPosition windowPosition = Marshal.PtrToStructure<WindowPosition>(lParam);
+            windowPosition.x = _largeScreenDeviceLeft;
+            windowPosition.y = _largeScreenDeviceTop;
+            windowPosition.cx = _largeScreenDeviceWidth;
+            windowPosition.cy = _largeScreenDeviceHeight;
+            windowPosition.flags &= ~(SwpNoMove | SwpNoSize);
+
+            Marshal.StructureToPtr(windowPosition, lParam, false);
+            return nint.Zero;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct WindowPosition
+        {
+            public nint hwnd;
+            public nint hwndInsertAfter;
+            public int x;
+            public int y;
+            public int cx;
+            public int cy;
+            public uint flags;
         }
 
         private static bool IsLargePhysicalScreen()

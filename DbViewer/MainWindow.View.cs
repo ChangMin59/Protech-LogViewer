@@ -81,6 +81,34 @@ namespace DbViewer
         {
             try
             {
+                HistoryOpenResult result = await Task.Run(() =>
+                    Open_History_File.Open(dbPath)
+                );
+
+                if (result.Status == HistoryOpenStatus.UnsupportedFileType)
+                {
+                    ResetOpenedHistoryStateIfNothingIsOpen("지원하지 않는 이력 파일 형식입니다.");
+                    ShowUnsupportedHistoryFileMessage(errorTitle);
+                    BlockPointerInputAfterModal();
+                    return;
+                }
+
+                if (result.Status == HistoryOpenStatus.InvalidTxtFile)
+                {
+                    ResetOpenedHistoryStateIfNothingIsOpen("잘못된 텍스트 이력 파일입니다.");
+                    ShowInvalidTxtHistoryFileMessage(errorTitle);
+                    BlockPointerInputAfterModal();
+                    return;
+                }
+
+                if (result.Status != HistoryOpenStatus.Success)
+                {
+                    ResetOpenedHistoryStateIfNothingIsOpen("잘못된 DB 이력 파일입니다.");
+                    ShowInvalidDbHistoryFileMessage(errorTitle);
+                    BlockPointerInputAfterModal();
+                    return;
+                }
+
                 CancelRunningJobs();
                 ClearMoveTargetHighlight();
 
@@ -89,31 +117,6 @@ namespace DbViewer
 
                 ResetCategoryCountText();
                 ClearQueryCaches();
-
-                HistoryOpenResult result = await Task.Run(() =>
-                    Open_History_File.Open(dbPath)
-                );
-
-                if (result.Status == HistoryOpenStatus.UnsupportedFileType)
-                {
-                    ShowUnsupportedHistoryFileMessage(errorTitle);
-                    BlockPointerInputAfterModal();
-                    return;
-                }
-
-                if (result.Status == HistoryOpenStatus.InvalidTxtFile)
-                {
-                    ShowInvalidTxtHistoryFileMessage(errorTitle);
-                    BlockPointerInputAfterModal();
-                    return;
-                }
-
-                if (result.Status != HistoryOpenStatus.Success)
-                {
-                    ShowInvalidDbHistoryFileMessage(errorTitle);
-                    BlockPointerInputAfterModal();
-                    return;
-                }
 
                 _repository = new LogRepository(result.DbPath);
 
@@ -143,7 +146,7 @@ namespace DbViewer
             }
             catch
             {
-                ResetOpenedHistoryState("잘못된 DB 이력 파일입니다.");
+                ResetOpenedHistoryStateIfNothingIsOpen("잘못된 DB 이력 파일입니다.");
                 ShowInvalidDbHistoryFileMessage(errorTitle);
                 BlockPointerInputAfterModal();
             }
@@ -198,6 +201,16 @@ namespace DbViewer
             DateCalendarDropdown.Visibility = Visibility.Collapsed;
 
             ShowLogEmptyRow(emptyRowMessage);
+        }
+
+        private void ResetOpenedHistoryStateIfNothingIsOpen(string emptyRowMessage)
+        {
+            if (_repository != null)
+            {
+                return;
+            }
+
+            ResetOpenedHistoryState(emptyRowMessage);
         }
 
         private static void ShowInvalidDbHistoryFileMessage(string title)
