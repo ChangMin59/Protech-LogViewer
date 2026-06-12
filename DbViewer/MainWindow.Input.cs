@@ -48,6 +48,8 @@ namespace DbViewer
             AttachPointerAction(SearchClearButton, ClearSearchKeywordAndReloadAllAsync);
             AttachPointerAction(Keyboard, RestartTouchKeyboardAsync);
             AttachPointerAction(RecoverMoveButton, async () => await HandleCategoryButtonAsync("recover"));
+            AttachPointerAction(TxtFileSaveButton, SaveCurrentLogsToTextFileAsync);
+            AttachPointerAction(PrintButton, PrintCurrentLogsAsync);
             AttachPointerAction(FileSaveButton, SaveCurrentLogsToPrintHtmlAsync);
 
             AttachPointerAction(PeriodSearchButton, LoadDateFirstPageAsync);

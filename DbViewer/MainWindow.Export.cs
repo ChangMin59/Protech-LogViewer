@@ -8,11 +8,112 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Controls;
 
 namespace DbViewer
 {
     public partial class MainWindow
     {
+        private async Task SaveCurrentLogsToTextFileAsync()
+        {
+            if (_isExportRunning)
+            {
+                return;
+            }
+
+            if (_repository == null)
+            {
+                MessageBox.Show(
+                    "저장할 이력 파일이 없습니다.",
+                    "파일 저장",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information
+                );
+                BlockPointerInputAfterModal();
+                return;
+            }
+
+            string? outputPath = SelectTextOutputPath();
+
+            if (outputPath == null)
+            {
+                BlockPointerInputAfterModal();
+                return;
+            }
+
+            _isExportRunning = true;
+
+            try
+            {
+                ClearMoveTargetHighlight();
+                ShowFileSaveProgressOverlay();
+
+                string mode = _currentMode;
+                string keyword = _currentKeyword;
+                string startDate = _currentStartDate;
+                string endDate = _currentEndDate;
+                string cacheKey = _activeRowsCacheKey;
+                List<string> selectedCategories = _selectedCategories.ToList();
+                List<LogRow>? selectedCategoryRows = mode == "category"
+                    ? GetSelectedCategoryRowsFromCache(selectedCategories)
+                    : null;
+                List<LogRow>? cachedRows = null;
+
+                if (mode == "date_cache")
+                {
+                    lock (_queryCacheLock)
+                    {
+                        if (_rowsCacheByKey.TryGetValue(cacheKey, out List<LogRow>? rows))
+                        {
+                            cachedRows = new List<LogRow>(rows);
+                        }
+                    }
+                }
+
+                string savedPath = await Task.Run(() =>
+                    Save_Text_File.Run(new SaveTextFileRequest
+                    {
+                        Repository = _repository,
+                        Mode = mode,
+                        Keyword = keyword,
+                        StartDate = startDate,
+                        EndDate = endDate,
+                        SelectedCategoryRows = selectedCategoryRows,
+                        CachedRows = cachedRows,
+                        OutputPath = outputPath
+                    })
+                );
+
+                HideFileSaveProgressOverlay();
+
+                MessageBox.Show(
+                    "이력 TXT 파일을 저장했습니다.\n\n" +
+                    $"저장 위치:\n{savedPath}",
+                    "파일 저장",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information
+                );
+                BlockPointerInputAfterModal();
+            }
+            catch
+            {
+                HideFileSaveProgressOverlay();
+
+                MessageBox.Show(
+                    "이력 TXT 파일 저장에 실패했습니다.",
+                    "파일 저장",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error
+                );
+                BlockPointerInputAfterModal();
+            }
+            finally
+            {
+                HideFileSaveProgressOverlay();
+                _isExportRunning = false;
+            }
+        }
+
         private async Task SaveCurrentLogsToPrintHtmlAsync()
         {
             if (_isExportRunning)
@@ -124,12 +225,56 @@ namespace DbViewer
 
         private void ShowFileSaveProgressOverlay()
         {
+            ShowFileSaveProgressOverlay(
+                "이력 파일 저장 중",
+                "데이터가 많으면 시간이 걸릴 수 있습니다.");
+        }
+
+        private void ShowFileSaveProgressOverlay(string title, string description)
+        {
+            SetFileSaveProgressText(title, description);
             FileSaveProgressOverlay.Visibility = Visibility.Visible;
         }
 
         private void HideFileSaveProgressOverlay()
         {
             FileSaveProgressOverlay.Visibility = Visibility.Collapsed;
+        }
+
+        private void SetFileSaveProgressText(string title, string description)
+        {
+            if (FindName("FileSaveProgressTitleText") is TextBlock titleText)
+            {
+                titleText.Text = title;
+            }
+
+            if (FindName("FileSaveProgressDescriptionText") is TextBlock descriptionText)
+            {
+                descriptionText.Text = description;
+            }
+        }
+
+        private string? SelectTextOutputPath()
+        {
+            SaveFileDialog dialog = new()
+            {
+                Title = "이력 TXT 파일 저장",
+                InitialDirectory = GetExecutableDirectory(),
+                FileName = $"이력_{DateTime.Now:yyyyMMdd_HHmmss}.txt",
+                AddExtension = true,
+                DefaultExt = ".txt",
+                CheckPathExists = true,
+                OverwritePrompt = true,
+                ValidateNames = true,
+                Filter = "텍스트 파일 (*.txt)|*.txt|모든 파일 (*.*)|*.*"
+            };
+
+            if (dialog.ShowDialog(this) != true)
+            {
+                return null;
+            }
+
+            return Path.GetFullPath(dialog.FileName);
         }
 
         private string? SelectPrintOutputDirectory()

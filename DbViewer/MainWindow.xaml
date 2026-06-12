@@ -173,6 +173,7 @@
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="0.35*"/>
                             <ColumnDefinition Width="0.35*"/>
+                            <ColumnDefinition Width="0.35*"/>
                             <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
 
@@ -202,7 +203,7 @@
                                 <StackPanel Orientation="Horizontal"
                                             HorizontalAlignment="Center"
                                             VerticalAlignment="Center">
-                                    <TextBlock Text="▣"
+                                    <TextBlock Text="📄"
                                                FontSize="18"
                                                Foreground="White"
                                                Margin="0,0,8,0"
@@ -217,6 +218,84 @@
                         </Border>
 
                         <Border Grid.Column="1"
+                                x:Name="TxtFileSaveButton"
+                                MinWidth="130"
+                                Height="54"
+                                CornerRadius="18"
+                                Margin="0,5,10,5"
+                                BorderBrush="{StaticResource RealGlassStrokeBrush}"
+                                BorderThickness="1"
+                                Effect="{StaticResource RealGlassButtonShadow}"
+                                Cursor="Hand">
+                            <Grid>
+                                <Border CornerRadius="18"
+                                        Background="{StaticResource RealGlassButtonFillBrush}"/>
+                                <Border CornerRadius="18"
+                                        Margin="1"
+                                        BorderBrush="{StaticResource RealGlassInnerStrokeBrush}"
+                                        BorderThickness="1"/>
+                                <Border CornerRadius="18,18,10,10"
+                                        Height="21"
+                                        Margin="1,1,1,0"
+                                        VerticalAlignment="Top"
+                                        Background="{StaticResource RealGlassButtonHighlightBrush}"/>
+
+                                <StackPanel Orientation="Horizontal"
+                                            HorizontalAlignment="Center"
+                                            VerticalAlignment="Center">
+                                    <TextBlock Text="💾"
+                                               FontSize="18"
+                                               Margin="0,0,8,0"
+                                               VerticalAlignment="Center"/>
+                                    <TextBlock Text="파일 저장"
+                                               FontSize="16"
+                                               FontWeight="Bold"
+                                               Foreground="#102044"
+                                               VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <Border Grid.Column="2"
+                                x:Name="PrintButton"
+                                MinWidth="130"
+                                Height="54"
+                                CornerRadius="18"
+                                Margin="0,5,10,5"
+                                BorderBrush="{StaticResource RealGlassStrokeBrush}"
+                                BorderThickness="1"
+                                Effect="{StaticResource RealGlassButtonShadow}"
+                                Cursor="Hand">
+                            <Grid>
+                                <Border CornerRadius="18"
+                                        Background="{StaticResource RealGlassButtonFillBrush}"/>
+                                <Border CornerRadius="18"
+                                        Margin="1"
+                                        BorderBrush="{StaticResource RealGlassInnerStrokeBrush}"
+                                        BorderThickness="1"/>
+                                <Border CornerRadius="18,18,10,10"
+                                        Height="21"
+                                        Margin="1,1,1,0"
+                                        VerticalAlignment="Top"
+                                        Background="{StaticResource RealGlassButtonHighlightBrush}"/>
+
+                                <StackPanel Orientation="Horizontal"
+                                            HorizontalAlignment="Center"
+                                            VerticalAlignment="Center">
+                                    <TextBlock Text="🖨"
+                                               FontSize="18"
+                                               Margin="0,0,8,0"
+                                               VerticalAlignment="Center"/>
+                                    <TextBlock Text="인쇄"
+                                               FontSize="16"
+                                               FontWeight="Bold"
+                                               Foreground="#102044"
+                                               VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <Border Grid.Column="3"
                                 x:Name="FileSaveButton"
                                 MinWidth="130"
                                 Height="54"
@@ -1080,14 +1159,16 @@
                         Effect="{StaticResource RealGlassButtonShadow}">
 
                     <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="이력 파일 저장 중"
+                        <TextBlock x:Name="FileSaveProgressTitleText"
+                                   Text="이력 파일 저장 중"
                                    FontSize="24"
                                    FontWeight="Bold"
                                    Foreground="#0E2448"
                                    HorizontalAlignment="Center"
                                    Margin="0,0,0,12"/>
 
-                        <TextBlock Text="데이터가 많으면 시간이 걸릴 수 있습니다."
+                        <TextBlock x:Name="FileSaveProgressDescriptionText"
+                                   Text="데이터가 많으면 시간이 걸릴 수 있습니다."
                                    FontSize="15"
                                    FontWeight="SemiBold"
                                    Foreground="#506078"
