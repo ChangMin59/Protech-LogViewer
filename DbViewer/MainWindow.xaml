@@ -1,7 +1,7 @@
 ﻿<Window x:Class="DbViewer.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="프로테크 로그 뷰어"
+        Title="프로테크 이력 보기"
         Width="1080"
         Height="1000"
         MinWidth="1080"

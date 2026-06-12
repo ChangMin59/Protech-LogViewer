@@ -10,40 +10,49 @@ namespace DbViewer
 {
     public partial class MainWindow
     {
+        // 이전 페이지 버튼을 눌렀을 때 현재 조건의 이전 로그 페이지를 불러온다.
         private async Task MovePrevPageAsync()
         {
             if (_repository == null)
             {
+                // 열린 이력 DB가 없으면 페이지 이동할 데이터가 없다.
                 return;
             }
 
             if (_currentPage <= 1)
             {
+                // 이미 1페이지면 더 이전으로 이동하지 않는다.
                 return;
             }
 
+            // 페이지가 바뀌면 이동모드 하이라이트 위치도 더 이상 유효하지 않다.
             ClearMoveTargetHighlight();
 
             _currentPage--;
 
             if (_currentMode == "category")
             {
+                // 화재/제경보 같은 카테고리 필터는 DB 재조회가 아니라 캐시 목록에서 페이지를 자른다.
                 await LoadCategoryPageFromCacheAsync();
                 return;
             }
 
+            // 전체/기간/검색 모드는 현재 모드에 맞게 DB 또는 캐시에서 페이지를 다시 읽는다.
             await LoadCurrentPageAsync(showLoading: false);
         }
 
+        // 다음 페이지 버튼을 눌렀을 때 현재 조건의 다음 로그 페이지를 불러온다.
         private async Task MoveNextPageAsync()
         {
             if (_repository == null)
             {
+                // 열린 이력 DB가 없으면 이동하지 않는다.
                 return;
             }
 
             if (_currentPage >= _totalPages)
             {
+                // 마지막 페이지면 더 이동하지 않는다.
                 return;
             }
 
@@ -53,6 +62,7 @@ namespace DbViewer
 
             if (_currentMode == "category")
             {
+                // 카테고리 필터는 이미 분류된 로그 목록에서 다음 페이지를 보여준다.
                 await LoadCategoryPageFromCacheAsync();
                 return;
             }
@@ -60,10 +70,12 @@ namespace DbViewer
             await LoadCurrentPageAsync(showLoading: false);
         }
 
+        // 페이지 크기 선택 드롭다운을 열거나 닫는다.
         private void TogglePageSizeDropdown()
         {
             if (DateCalendarDropdown.Visibility == Visibility.Visible)
             {
+                // 날짜 달력과 페이지 크기 드롭다운이 동시에 열리지 않게 한다.
                 CloseDateCalendarDropdown();
             }
 
@@ -75,15 +87,19 @@ namespace DbViewer
             UpdatePageSizeDropdownStyle();
         }
 
+        // 한 화면에 보여줄 로그 건수를 바꾼다.
+        // 예: 25건, 1000건, 5000건, 10000건, 50000건, 100000건.
         private async Task ChangePageSizeAsync(int size)
         {
             PageSizeDropdown.Visibility = Visibility.Collapsed;
 
             ClearMoveTargetHighlight();
 
+            // 실제 페이지 크기와 버튼 표시 문구를 같이 갱신한다.
             _pageSize = size;
             PageSizeText.Text = $"{size:N0}건";
 
+            // 페이지 크기가 바뀌면 항상 1페이지부터 다시 보여준다.
             _currentPage = 1;
             _totalPages = CalculateTotalPages(_totalCount);
 
@@ -91,13 +107,16 @@ namespace DbViewer
 
             if (_currentMode == "category")
             {
+                // 카테고리 모드는 선택된 로그 캐시에서 새 pageSize만큼 잘라 보여준다.
                 await LoadCategoryPageFromCacheAsync();
                 return;
             }
 
+            // 전체/기간/검색 모드는 현재 조건의 첫 페이지를 다시 렌더링한다.
             await LoadCurrentPageAsync(showLoading: false);
         }
 
+        // 현재 선택된 페이지 크기 버튼 색상을 갱신한다.
         private void UpdatePageSizeDropdownStyle()
         {
             SetPageSizeItemStyle(PageSize25Button, 25);
@@ -108,28 +127,34 @@ namespace DbViewer
             SetPageSizeItemStyle(PageSize100000Button, 100000);
         }
 
+        // 특정 페이지 크기 버튼의 선택/비선택 스타일을 적용한다.
         private void SetPageSizeItemStyle(Border button, int size)
         {
             bool isSelected = _pageSize == size;
 
+            // 선택된 크기는 주황색 배경, 나머지는 투명 배경이다.
             button.Background = isSelected
                 ? new SolidColorBrush(Color.FromRgb(255, 90, 67))
                 : new SolidColorBrush(Color.FromArgb(0, 255, 255, 255));
 
             if (button.Child is TextBlock textBlock)
             {
+                // 선택된 항목은 흰 글자, 나머지는 진한 남색 글자다.
                 textBlock.Foreground = isSelected
                     ? new SolidColorBrush(Color.FromRgb(255, 255, 255))
                     : new SolidColorBrush(Color.FromRgb(35, 57, 93));
             }
         }
 
+        // 하단 페이지 버튼들을 현재 페이지/전체 페이지 기준으로 다시 만든다.
         private void RebuildPaginationButtons()
         {
             PaginationPanel.Children.Clear();
 
+            // 예: 총 12,000페이지 · 300,000건.
             TotalPageInfoText.Text = $"총 {_totalPages:N0}페이지 · {_totalCount:N0}건";
 
+            // 이전 버튼은 1페이지에서는 비활성화된다.
             PaginationPanel.Children.Add(CreatePaginationButton(
                 text: "‹ 이전",
                 isActive: false,
@@ -141,6 +166,7 @@ namespace DbViewer
             {
                 int capturedPage = pageNumber;
 
+                // 현재 페이지 그룹의 숫자 버튼을 만든다.
                 PaginationPanel.Children.Add(CreatePaginationButton(
                     text: pageNumber.ToString(),
                     isActive: pageNumber == _currentPage,
@@ -149,6 +175,7 @@ namespace DbViewer
                     {
                         if (_currentPage == capturedPage)
                         {
+                            // 이미 보고 있는 페이지를 다시 누르면 아무 작업도 하지 않는다.
                             return;
                         }
 
@@ -156,6 +183,7 @@ namespace DbViewer
 
                         if (_currentMode == "category")
                         {
+                            // 카테고리 필터는 캐시에서 해당 페이지를 자른다.
                             await LoadCategoryPageFromCacheAsync();
                             return;
                         }
@@ -165,6 +193,7 @@ namespace DbViewer
                 ));
             }
 
+            // 다음 버튼은 마지막 페이지에서는 비활성화된다.
             PaginationPanel.Children.Add(CreatePaginationButton(
                 text: "다음 ›",
                 isActive: false,
@@ -173,12 +202,15 @@ namespace DbViewer
             ));
         }
 
+        // 현재 페이지가 속한 5개 단위 페이지 번호 그룹을 반환한다.
+        // 예: 현재 7페이지면 6,7,8,9,10을 보여준다.
         private List<int> GetVisiblePageNumbers()
         {
             List<int> pages = new();
 
             const int groupSize = 5;
 
+            // 1~5, 6~10, 11~15 식으로 그룹을 나눈다.
             int currentGroupIndex = (_currentPage - 1) / groupSize;
 
             int startPage = currentGroupIndex * groupSize + 1;
@@ -192,12 +224,14 @@ namespace DbViewer
             return pages;
         }
 
+        // 하단 페이지 버튼 UI를 만든다.
         private Border CreatePaginationButton(
             string text,
             bool isActive,
             bool isEnabled,
             Func<Task> onClick)
         {
+            // 현재 페이지는 주황색, 일반 버튼은 반투명 흰색으로 보인다.
             Border button = new()
             {
                 CornerRadius = new CornerRadius(12),
@@ -214,6 +248,7 @@ namespace DbViewer
                 BorderThickness = new Thickness(1)
             };
 
+            // 버튼 텍스트다. 예: "‹ 이전", "1", "다음 ›".
             TextBlock label = new()
             {
                 Text = text,
@@ -230,6 +265,7 @@ namespace DbViewer
 
             if (isEnabled)
             {
+                // 마우스 클릭과 터치 입력 모두 같은 페이지 이동 함수를 호출한다.
                 button.MouseLeftButtonUp += async (_, _) => await onClick();
                 button.TouchDown += async (_, e) =>
                 {
@@ -241,8 +277,10 @@ namespace DbViewer
             return button;
         }
 
+        // 전체 건수와 현재 pageSize를 기준으로 총 페이지 수를 계산한다.
         private int CalculateTotalPages(int totalCount)
         {
+            // 로그가 0건이어도 화면은 최소 1페이지로 표시한다.
             return Math.Max(1, (int)Math.Ceiling(totalCount / (double)_pageSize));
         }
     }
