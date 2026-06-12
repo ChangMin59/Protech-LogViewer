@@ -173,7 +173,6 @@
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="0.35*"/>
                             <ColumnDefinition Width="0.35*"/>
-                            <ColumnDefinition Width="0.35*"/>
                             <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
 
@@ -218,46 +217,6 @@
                         </Border>
 
                         <Border Grid.Column="1"
-                                x:Name="HistoryRecoverButton"
-                                MinWidth="130"
-                                Height="54"
-                                CornerRadius="18"
-                                Margin="0,5,10,5"
-                                BorderBrush="{StaticResource RealGlassStrokeBrush}"
-                                BorderThickness="1"
-                                Effect="{StaticResource RealGlassButtonShadow}"
-                                Cursor="Hand">
-                            <Grid>
-                                <Border CornerRadius="18"
-                                        Background="{StaticResource RealGlassButtonFillBrush}"/>
-                                <Border CornerRadius="18"
-                                        Margin="1"
-                                        BorderBrush="{StaticResource RealGlassInnerStrokeBrush}"
-                                        BorderThickness="1"/>
-                                <Border CornerRadius="18,18,10,10"
-                                        Height="21"
-                                        Margin="1,1,1,0"
-                                        VerticalAlignment="Top"
-                                        Background="{StaticResource RealGlassButtonHighlightBrush}"/>
-
-                                <StackPanel Orientation="Horizontal"
-                                            HorizontalAlignment="Center"
-                                            VerticalAlignment="Center">
-                                    <TextBlock Text="↩"
-                                               FontSize="22"
-                                               Foreground="#FF5A3D"
-                                               Margin="0,0,8,0"
-                                               VerticalAlignment="Center"/>
-                                    <TextBlock Text="이력 복구"
-                                               FontSize="16"
-                                               FontWeight="Bold"
-                                               Foreground="#102044"
-                                               VerticalAlignment="Center"/>
-                                </StackPanel>
-                            </Grid>
-                        </Border>
-
-                        <Border Grid.Column="2"
                                 x:Name="FileSaveButton"
                                 MinWidth="130"
                                 Height="54"
@@ -266,7 +225,8 @@
                                 BorderBrush="{StaticResource RealGlassStrokeBrush}"
                                 BorderThickness="1"
                                 Effect="{StaticResource RealGlassButtonShadow}"
-                                Cursor="Hand">
+                                Cursor="Hand"
+                                Visibility="Collapsed">
                             <Grid>
                                 <Border CornerRadius="18"
                                         Background="{StaticResource RealGlassButtonFillBrush}"/>
@@ -287,7 +247,7 @@
                                                FontSize="18"
                                                Margin="0,0,8,0"
                                                VerticalAlignment="Center"/>
-                                    <TextBlock Text="파일 저장"
+                                    <TextBlock Text="html 저장"
                                                FontSize="16"
                                                FontWeight="Bold"
                                                Foreground="#102044"
@@ -1097,47 +1057,6 @@
                                HorizontalAlignment="Center"
                                VerticalAlignment="Center"/>
                         </Border>
-                    </StackPanel>
-                </Border>
-            </Grid>
-        </Border>
-
-        <Border x:Name="HistoryRecoverProgressOverlay"
-                Background="#66000000"
-                Visibility="Collapsed"
-                Panel.ZIndex="2100">
-
-            <Grid>
-                <Border Width="420"
-                        Height="190"
-                        HorizontalAlignment="Center"
-                        VerticalAlignment="Center"
-                        CornerRadius="24"
-                        Background="#F8FFFFFF"
-                        BorderBrush="#E6FFFFFF"
-                        BorderThickness="1"
-                        Padding="26"
-                        Effect="{StaticResource RealGlassButtonShadow}">
-
-                    <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="이력 파일 복구 중"
-                                   FontSize="24"
-                                   FontWeight="Bold"
-                                   Foreground="#0E2448"
-                                   HorizontalAlignment="Center"
-                                   Margin="0,0,0,12"/>
-
-                        <TextBlock Text="데이터가 많으면 시간이 걸릴 수 있습니다."
-                                   FontSize="15"
-                                   FontWeight="SemiBold"
-                                   Foreground="#506078"
-                                   HorizontalAlignment="Center"
-                                   Margin="0,0,0,20"/>
-
-                        <ProgressBar Height="12"
-                                     IsIndeterminate="True"
-                                     Foreground="#FF5A43"
-                                     Background="#E8EEF6"/>
                     </StackPanel>
                 </Border>
             </Grid>

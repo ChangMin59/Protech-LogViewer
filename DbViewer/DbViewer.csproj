@@ -20,13 +20,6 @@
   <ItemGroup>
     <None Remove="Assets\Images\Background.png" />
     <None Remove="Assets\Icons\icon.ico" />
-    <None Remove="sqllite3\sqlite3.exe" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Content Include="sqllite3\sqlite3.exe">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
   </ItemGroup>
 
   <ItemGroup>

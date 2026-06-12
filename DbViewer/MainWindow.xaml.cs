@@ -89,7 +89,6 @@ namespace DbViewer
         private int _countJobVersion = 0;
         private bool _isMoveMode = false;
         private bool _isMoveNavigationRunning = false;
-        private bool _isRecoveryRunning = false;
         private bool _isOpeningHistory = false;
         private bool _isExportRunning = false;
         private bool _lockLargeScreenWindowSize = false;

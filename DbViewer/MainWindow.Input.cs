@@ -16,7 +16,6 @@ namespace DbViewer
         {
             AttachPointerAction(HistoryViewButton, ShowHistoryOpenChoice);
 
-            AttachPointerAction(HistoryRecoverButton, RecoverHistoryFileAsync);
             AttachOverlayChoiceAction(ManualHistoryFileButton, async () =>
             {
                 HistoryOpenChoiceOverlay.Visibility = Visibility.Collapsed;
