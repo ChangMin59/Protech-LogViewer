@@ -364,29 +364,35 @@ namespace DbViewer
 
             UpdateRecoverMoveButtonVisibility();
 
-            // 이동 모드로 들어갈 때는 기준 화면을 항상 전체 로그로 맞춘다.
             if (_isMoveMode)
             {
                 ClearMoveTargetHighlight();
 
-                _selectedCategories.Clear();
-                UpdateCategoryCardActiveStates();
+                if (_currentMode != "all")
+                {
+                    _selectedCategories.Clear();
+                    UpdateCategoryCardActiveStates();
 
-                _currentMode = "all";
-                _currentKeyword = "";
-                _currentStartDate = "";
-                _currentEndDate = "";
-                _currentPage = 1;
-                _activeRowsCacheKey = "all";
+                    _currentMode = "all";
+                    _currentKeyword = "";
+                    _currentStartDate = "";
+                    _currentEndDate = "";
+                    _currentPage = 1;
+                    _activeRowsCacheKey = "all";
 
-                _totalCount = await Task.Run(() => _repository.CountAllLogs());
-                _totalPages = CalculateTotalPages(_totalCount);
+                    _totalCount = await Task.Run(() => _repository.CountAllLogs());
+                    _totalPages = CalculateTotalPages(_totalCount);
 
-                TotalLogCountText.Text = _totalCount.ToString("N0");
+                    TotalLogCountText.Text = _totalCount.ToString("N0");
+
+                    SaveBaseQueryState();
+
+                    await LoadCurrentPageAsync(showLoading: false, resetScroll: true);
+
+                    return;
+                }
 
                 SaveBaseQueryState();
-
-                await LoadCurrentPageAsync(showLoading: false, resetScroll: true);
 
                 return;
             }
