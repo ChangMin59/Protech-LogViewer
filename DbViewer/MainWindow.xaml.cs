@@ -40,6 +40,7 @@ namespace DbViewer
         private CancellationTokenSource? _renderCts;
         private CancellationTokenSource? _countCts;
         private CancellationTokenSource? _loadCts;
+        private CancellationTokenSource? _touchKeyboardMonitorCts;
         private bool _isLogContentDragging = false;
         private Point _dragStartPoint;
         private double _dragStartHorizontalOffset;
@@ -93,10 +94,14 @@ namespace DbViewer
         private bool _isExportRunning = false;
         private bool _lockLargeScreenWindowSize = false;
         private int? _highlightedRowIndexInPage = null;
+        private bool _isVirtualRenderingActive = false;
+        private int _virtualStartIndex = -1;
+        private int _virtualEndIndexExclusive = -1;
         private DateTime _lastPointerActionAt = DateTime.MinValue;
         private DateTime _ignorePointerUntil = DateTime.MinValue;
 
         private const double LogRowVisualHeight = 50.0;
+        private const int VirtualizationBufferRows = 18;
         private const string MoveTargetLineTag = "MoveTargetLine";
         private const int PointerActionDebounceMilliseconds = 450;
         private const int ModalCloseInputGuardMilliseconds = 500;
@@ -114,6 +119,7 @@ namespace DbViewer
             ["line_fault"] = "단선",
             ["output"] = "출력",
             ["mcc"] = "MCC",
+            ["recover"] = "시스템 복구",
             ["other"] = "기타"
         };
 
@@ -228,13 +234,8 @@ namespace DbViewer
 
             PageSizeText.Text = $"{_pageSize:N0}건";
 
-            _highlightedRowIndexInPage = null;
-
-            FixedTimeRowsPanel.Children.Clear();
-            LogRowsPanel.Children.Clear();
-
-            FixedTimeRowsPanel.Children.Add(Render_Log_Row.CreateFixedEmptyCell());
-            LogRowsPanel.Children.Add(Render_Log_Row.CreateEmptyRow(""));
+            ShowLogEmptyRow("");
+            UpdateRecoverMoveButtonVisibility();
 
             UpdatePageSizeDropdownStyle();
             RebuildPaginationButtons();
@@ -277,6 +278,8 @@ namespace DbViewer
                 ? new SolidColorBrush(Color.FromRgb(255, 90, 61))
                 : new SolidColorBrush(Color.FromRgb(35, 57, 93));
 
+            UpdateRecoverMoveButtonVisibility();
+
             // 이동 모드로 들어갈 때는 기준 화면을 항상 전체 로그로 맞춘다.
             if (_isMoveMode)
             {
@@ -309,6 +312,13 @@ namespace DbViewer
              * 현재 화면은 유지하고 빨간줄만 제거한다.
              */
             ClearMoveTargetHighlight();
+        }
+
+        private void UpdateRecoverMoveButtonVisibility()
+        {
+            RecoverMoveButton.Visibility = _isMoveMode
+                ? Visibility.Visible
+                : Visibility.Collapsed;
         }
 
         private async Task HandleCategoryButtonAsync(string category)
@@ -466,20 +476,54 @@ namespace DbViewer
                 return;
             }
 
-            if (rowIndexInPage >= FixedTimeRowsPanel.Children.Count)
+            if (rowIndexInPage >= _currentRows.Count)
             {
                 return;
             }
-
-            if (rowIndexInPage >= LogRowsPanel.Children.Count)
-            {
-                return;
-            }
-
-            AddBottomHighlightLine(FixedTimeRowsPanel.Children[rowIndexInPage]);
-            AddBottomHighlightLine(LogRowsPanel.Children[rowIndexInPage]);
 
             _highlightedRowIndexInPage = rowIndexInPage;
+            AddMoveTargetHighlightIfRendered(rowIndexInPage);
+        }
+
+        private void AddMoveTargetHighlightIfRendered(int rowIndexInPage)
+        {
+            int? childIndex = GetRenderedChildIndex(rowIndexInPage);
+
+            if (!childIndex.HasValue)
+            {
+                return;
+            }
+
+            int index = childIndex.Value;
+
+            if (index < 0 || index >= FixedTimeRowsPanel.Children.Count)
+            {
+                return;
+            }
+
+            if (index >= LogRowsPanel.Children.Count)
+            {
+                return;
+            }
+
+            AddBottomHighlightLine(FixedTimeRowsPanel.Children[index]);
+            AddBottomHighlightLine(LogRowsPanel.Children[index]);
+        }
+
+        private int? GetRenderedChildIndex(int rowIndexInPage)
+        {
+            if (!_isVirtualRenderingActive)
+            {
+                return rowIndexInPage;
+            }
+
+            if (rowIndexInPage < _virtualStartIndex ||
+                rowIndexInPage >= _virtualEndIndexExclusive)
+            {
+                return null;
+            }
+
+            return rowIndexInPage - _virtualStartIndex + 1;
         }
 
         private void ClearMoveTargetHighlight()
@@ -490,15 +534,20 @@ namespace DbViewer
             }
 
             int index = _highlightedRowIndexInPage.Value;
+            int? childIndex = GetRenderedChildIndex(index);
 
-            if (index >= 0 && index < FixedTimeRowsPanel.Children.Count)
+            if (childIndex.HasValue &&
+                childIndex.Value >= 0 &&
+                childIndex.Value < FixedTimeRowsPanel.Children.Count)
             {
-                RemoveBottomHighlightLine(FixedTimeRowsPanel.Children[index]);
+                RemoveBottomHighlightLine(FixedTimeRowsPanel.Children[childIndex.Value]);
             }
 
-            if (index >= 0 && index < LogRowsPanel.Children.Count)
+            if (childIndex.HasValue &&
+                childIndex.Value >= 0 &&
+                childIndex.Value < LogRowsPanel.Children.Count)
             {
-                RemoveBottomHighlightLine(LogRowsPanel.Children[index]);
+                RemoveBottomHighlightLine(LogRowsPanel.Children[childIndex.Value]);
             }
 
             _highlightedRowIndexInPage = null;
@@ -756,11 +805,7 @@ namespace DbViewer
 
             if (!_categoryCacheReady && _categoryCacheBuilding && _currentRows.Count == 0)
             {
-                _highlightedRowIndexInPage = null;
-                FixedTimeRowsPanel.Children.Clear();
-                LogRowsPanel.Children.Clear();
-                FixedTimeRowsPanel.Children.Add(Render_Log_Row.CreateFixedEmptyCell());
-                LogRowsPanel.Children.Add(Render_Log_Row.CreateEmptyRow("선택한 카테고리 내용을 계산하는 중입니다..."));
+                ShowLogEmptyRow("선택한 카테고리 내용을 계산하는 중입니다...");
                 return;
             }
 
@@ -903,11 +948,7 @@ namespace DbViewer
             }
             catch
             {
-                _highlightedRowIndexInPage = null;
-                FixedTimeRowsPanel.Children.Clear();
-                LogRowsPanel.Children.Clear();
-                FixedTimeRowsPanel.Children.Add(Render_Log_Row.CreateFixedEmptyCell());
-                LogRowsPanel.Children.Add(Render_Log_Row.CreateEmptyRow("이력 내용을 불러오는 중 오류가 발생했습니다."));
+                ShowLogEmptyRow("이력 내용을 불러오는 중 오류가 발생했습니다.");
                 RebuildPaginationButtons();
 
                 ShowLoadLogsFailedMessage();
@@ -926,10 +967,7 @@ namespace DbViewer
 
             CancellationToken token = _renderCts.Token;
 
-            _highlightedRowIndexInPage = null;
-
-            FixedTimeRowsPanel.Children.Clear();
-            LogRowsPanel.Children.Clear();
+            _highlightedRowIndexInPage = highlightRowIndex;
 
             if (resetScroll)
             {
@@ -943,104 +981,129 @@ namespace DbViewer
 
             if (rows.Count == 0)
             {
-                FixedTimeRowsPanel.Children.Add(Render_Log_Row.CreateFixedEmptyCell());
-                LogRowsPanel.Children.Add(Render_Log_Row.CreateEmptyRow("표시할 이력 내용이 없습니다."));
+                ShowLogEmptyRow("표시할 이력 내용이 없습니다.");
                 return;
-            }
-
-            /*
-             * 이동 모드에서 다른 페이지로 넘어갈 때는 한 프레임 안에서 새 페이지 렌더링, 빨간줄 표시, 스크롤 이동을 끝낸다.
-             * 배치 렌더링처럼 중간에 await를 끼우면 ScrollViewer의 Extent가 단계적으로 변해서 스크롤바가 흔들려 보인다.
-             */
-            if (instantRender)
-            {
-                for (int i = 0; i < rows.Count; i++)
-                {
-                    FixedTimeRowsPanel.Children.Add(Render_Log_Row.CreateFixedTimeCell(rows[i], i));
-                    LogRowsPanel.Children.Add(Render_Log_Row.CreateScrollableLogRow(rows[i], i));
-                }
-
-                if (highlightRowIndex.HasValue)
-                {
-                    ApplyMoveTargetHighlight(highlightRowIndex.Value);
-                }
-
-                if (targetVerticalOffset.HasValue)
-                {
-                    LogScrollViewer.ScrollToVerticalOffset(targetVerticalOffset.Value);
-                    FixedTimeScrollViewer.ScrollToVerticalOffset(targetVerticalOffset.Value);
-                }
-
-                return;
-            }
-
-            int batchSize;
-
-            if (rows.Count >= 100000)
-            {
-                batchSize = 5;
-            }
-            else if (rows.Count >= 50000)
-            {
-                batchSize = 8;
-            }
-            else if (rows.Count >= 10000)
-            {
-                batchSize = 12;
-            }
-            else if (rows.Count >= 5000)
-            {
-                batchSize = 20;
-            }
-            else
-            {
-                batchSize = 50;
             }
 
             try
             {
-                for (int start = 0; start < rows.Count; start += batchSize)
-                {
-                    token.ThrowIfCancellationRequested();
+                token.ThrowIfCancellationRequested();
 
-                    int end = Math.Min(start + batchSize, rows.Count);
+                ActivateVirtualRendering();
+                RenderVirtualRows(force: true);
 
-                    for (int i = start; i < end; i++)
-                    {
-                        FixedTimeRowsPanel.Children.Add(Render_Log_Row.CreateFixedTimeCell(rows[i], i));
-                        LogRowsPanel.Children.Add(Render_Log_Row.CreateScrollableLogRow(rows[i], i));
-                    }
-
-                    await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
-
-                    if (rows.Count >= 100000)
-                    {
-                        await Task.Delay(8, token);
-                    }
-                    else if (rows.Count >= 50000)
-                    {
-                        await Task.Delay(5, token);
-                    }
-                    else
-                    {
-                        await Task.Delay(1, token);
-                    }
-                }
-
-                if (highlightRowIndex.HasValue)
-                {
-                    ApplyMoveTargetHighlight(highlightRowIndex.Value);
-                }
+                await Dispatcher.Yield(DispatcherPriority.Loaded);
+                token.ThrowIfCancellationRequested();
 
                 if (targetVerticalOffset.HasValue)
                 {
                     LogScrollViewer.ScrollToVerticalOffset(targetVerticalOffset.Value);
                     FixedTimeScrollViewer.ScrollToVerticalOffset(targetVerticalOffset.Value);
+                    RenderVirtualRows(force: true);
                 }
             }
             catch (OperationCanceledException)
             {
             }
+        }
+
+        private void ActivateVirtualRendering()
+        {
+            _isVirtualRenderingActive = true;
+            _virtualStartIndex = -1;
+            _virtualEndIndexExclusive = -1;
+        }
+
+        private void DeactivateVirtualRendering()
+        {
+            _isVirtualRenderingActive = false;
+            _virtualStartIndex = -1;
+            _virtualEndIndexExclusive = -1;
+            _highlightedRowIndexInPage = null;
+        }
+
+        private void ShowLogEmptyRow(string message)
+        {
+            DeactivateVirtualRendering();
+
+            FixedTimeRowsPanel.Children.Clear();
+            LogRowsPanel.Children.Clear();
+
+            FixedTimeRowsPanel.Children.Add(Render_Log_Row.CreateFixedEmptyCell());
+            LogRowsPanel.Children.Add(Render_Log_Row.CreateEmptyRow(message));
+        }
+
+        private void RenderVirtualRows(bool force = false)
+        {
+            if (!_isVirtualRenderingActive || _currentRows.Count == 0)
+            {
+                return;
+            }
+
+            double viewportHeight = LogScrollViewer.ViewportHeight;
+
+            if (viewportHeight <= 0)
+            {
+                viewportHeight = LogScrollViewer.ActualHeight;
+            }
+
+            if (viewportHeight <= 0)
+            {
+                viewportHeight = LogRowVisualHeight * 12;
+            }
+
+            double verticalOffset = Math.Max(0, LogScrollViewer.VerticalOffset);
+            int firstVisibleIndex = (int)Math.Floor(verticalOffset / LogRowVisualHeight);
+            int visibleCount = (int)Math.Ceiling(viewportHeight / LogRowVisualHeight) + 1;
+
+            int startIndex = Math.Max(0, firstVisibleIndex - VirtualizationBufferRows);
+            int endIndexExclusive = Math.Min(
+                _currentRows.Count,
+                firstVisibleIndex + visibleCount + VirtualizationBufferRows
+            );
+
+            if (!force &&
+                startIndex == _virtualStartIndex &&
+                endIndexExclusive == _virtualEndIndexExclusive)
+            {
+                return;
+            }
+
+            _virtualStartIndex = startIndex;
+            _virtualEndIndexExclusive = endIndexExclusive;
+
+            FixedTimeRowsPanel.Children.Clear();
+            LogRowsPanel.Children.Clear();
+
+            double topSpacerHeight = startIndex * LogRowVisualHeight;
+            double bottomSpacerHeight = (_currentRows.Count - endIndexExclusive) * LogRowVisualHeight;
+
+            FixedTimeRowsPanel.Children.Add(CreateVirtualSpacer(topSpacerHeight));
+            LogRowsPanel.Children.Add(CreateVirtualSpacer(topSpacerHeight));
+
+            for (int i = startIndex; i < endIndexExclusive; i++)
+            {
+                FixedTimeRowsPanel.Children.Add(Render_Log_Row.CreateFixedTimeCell(_currentRows[i], i));
+                LogRowsPanel.Children.Add(Render_Log_Row.CreateScrollableLogRow(_currentRows[i], i));
+            }
+
+            FixedTimeRowsPanel.Children.Add(CreateVirtualSpacer(bottomSpacerHeight));
+            LogRowsPanel.Children.Add(CreateVirtualSpacer(bottomSpacerHeight));
+
+            if (_highlightedRowIndexInPage.HasValue)
+            {
+                AddMoveTargetHighlightIfRendered(_highlightedRowIndexInPage.Value);
+            }
+        }
+
+        private static Border CreateVirtualSpacer(double height)
+        {
+            return new Border
+            {
+                Height = Math.Max(0, height),
+                Background = Brushes.Transparent,
+                IsHitTestVisible = false
+            };
         }
 
         private void StartBackgroundCategoryCache(string startDate = "", string endDate = "")
@@ -1677,6 +1740,7 @@ namespace DbViewer
             _renderCts?.Cancel();
             _countCts?.Cancel();
             _loadCts?.Cancel();
+            _touchKeyboardMonitorCts?.Cancel();
 
             if (PageSizeDropdown != null)
             {

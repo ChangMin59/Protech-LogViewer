@@ -1,6 +1,8 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
@@ -46,6 +48,7 @@ namespace DbViewer
 
             AttachPointerAction(SearchClearButton, ClearSearchKeywordAndReloadAllAsync);
             AttachPointerAction(Keyboard, RestartTouchKeyboardAsync);
+            AttachPointerAction(RecoverMoveButton, async () => await HandleCategoryButtonAsync("recover"));
             AttachPointerAction(FileSaveButton, SaveCurrentLogsToPrintHtmlAsync);
 
             AttachPointerAction(PeriodSearchButton, LoadDateFirstPageAsync);
@@ -330,10 +333,15 @@ namespace DbViewer
                 return;
             }
 
+            ReleaseSearchInputFocus();
+            _ = CloseTouchKeyboardAsync();
+        }
+
+        private void ReleaseSearchInputFocus()
+        {
             RootGrid.Focus();
             System.Windows.Input.Keyboard.ClearFocus();
             RootGrid.Focus();
-            _ = CloseTouchKeyboardAsync();
         }
 
         private async Task RestartTouchKeyboardAsync()
@@ -359,7 +367,11 @@ namespace DbViewer
                     MessageBoxButton.OK,
                     MessageBoxImage.Warning
                 );
+
+                return;
             }
+
+            StartTouchKeyboardCloseMonitor();
         }
 
         private void ShowTouchKeyboardForSearchBox()
@@ -373,7 +385,70 @@ namespace DbViewer
 
                 SearchKeywordTextBox.Focus();
                 SearchKeywordTextBox.CaretIndex = SearchKeywordTextBox.Text.Length;
-                TryStartTouchKeyboard();
+
+                if (TryStartTouchKeyboard())
+                {
+                    StartTouchKeyboardCloseMonitor();
+                }
+            });
+        }
+
+        private void StartTouchKeyboardCloseMonitor()
+        {
+            _touchKeyboardMonitorCts?.Cancel();
+            _touchKeyboardMonitorCts = new CancellationTokenSource();
+
+            CancellationToken token = _touchKeyboardMonitorCts.Token;
+
+            _ = Dispatcher.InvokeAsync(async () =>
+            {
+                try
+                {
+                    bool keyboardWasVisible = false;
+                    int hiddenChecks = 0;
+
+                    for (int i = 0; i < 80; i++)
+                    {
+                        if (token.IsCancellationRequested)
+                        {
+                            return;
+                        }
+
+                        await Task.Delay(150, token);
+
+                        if (!SearchKeywordTextBox.IsKeyboardFocusWithin && !SearchKeywordTextBox.IsFocused)
+                        {
+                            return;
+                        }
+
+                        bool keyboardVisible = IsTouchKeyboardVisible();
+
+                        if (keyboardVisible)
+                        {
+                            keyboardWasVisible = true;
+                            hiddenChecks = 0;
+                            continue;
+                        }
+
+                        if (!keyboardWasVisible)
+                        {
+                            continue;
+                        }
+
+                        hiddenChecks++;
+
+                        if (hiddenChecks < 3)
+                        {
+                            continue;
+                        }
+
+                        ReleaseSearchInputFocus();
+                        return;
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                }
             });
         }
 
@@ -409,6 +484,48 @@ namespace DbViewer
             CloseProcessesByName("TextInputHost");
             CloseProcessesByName("InputApp");
             CloseProcessesByName("osk");
+        }
+
+        private static bool IsTouchKeyboardVisible()
+        {
+            bool visible = false;
+
+            EnumWindows((hWnd, _) =>
+            {
+                if (!IsWindowVisible(hWnd))
+                {
+                    return true;
+                }
+
+                GetWindowThreadProcessId(hWnd, out uint processId);
+
+                if (processId == 0)
+                {
+                    return true;
+                }
+
+                try
+                {
+                    using Process process = Process.GetProcessById((int)processId);
+                    string processName = process.ProcessName;
+
+                    if (processName.Equals("TabTip", StringComparison.OrdinalIgnoreCase) ||
+                        processName.Equals("TextInputHost", StringComparison.OrdinalIgnoreCase) ||
+                        processName.Equals("InputApp", StringComparison.OrdinalIgnoreCase) ||
+                        processName.Equals("osk", StringComparison.OrdinalIgnoreCase))
+                    {
+                        visible = true;
+                        return false;
+                    }
+                }
+                catch
+                {
+                }
+
+                return true;
+            }, IntPtr.Zero);
+
+            return visible;
         }
 
         private static void CloseProcessesByName(string processName)
@@ -456,5 +573,16 @@ namespace DbViewer
                 return false;
             }
         }
+
+        private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        private static extern bool IsWindowVisible(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
     }
 }

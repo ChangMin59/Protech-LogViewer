@@ -36,6 +36,8 @@ namespace DbViewer
 
         private void LogScrollViewer_ScrollChanged(object sender, ScrollChangedEventArgs e)
         {
+            RenderVirtualRows();
+
             FixedTimeScrollViewer.ScrollToVerticalOffset(e.VerticalOffset);
             HeaderHorizontalScrollViewer.ScrollToHorizontalOffset(e.HorizontalOffset);
         }

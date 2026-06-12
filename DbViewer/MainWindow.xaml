@@ -160,37 +160,13 @@
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
 
-                <Grid Grid.Row="0" Margin="0,0,0,12">
-                    <StackPanel Orientation="Horizontal"
-                                VerticalAlignment="Center">
-
-                        <Border Width="52"
-                                Height="52"
-                                CornerRadius="16"
-                                Style="{StaticResource PrimaryButtonStyle}"
-                                Margin="0,0,16,0">
-                            <TextBlock Text="🔥"
-                                       FontSize="28"
-                                       HorizontalAlignment="Center"
-                                       VerticalAlignment="Center"/>
-                        </Border>
-
-                        <TextBlock Text="프로테크 이력 보기"
-                                   FontSize="31"
-                                   FontWeight="Bold"
-                                   Foreground="#0E2448"
-                                   VerticalAlignment="Center"/>
-                    </StackPanel>
-                </Grid>
-
-                <Border Grid.Row="1"
+                <Border Grid.Row="0"
                         Style="{StaticResource GlassSubPanelStyle}"
                         CornerRadius="22"
-                        Padding="12"
+                        Padding="15"
                         Margin="0,0,0,12">
 
                     <Grid HorizontalAlignment="Stretch">
@@ -322,7 +298,7 @@
                     </Grid>
                 </Border>
 
-                <Grid Grid.Row="2">
+                <Grid Grid.Row="1">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
@@ -333,7 +309,7 @@
                     <Border Grid.Row="0"
                             Style="{StaticResource GlassSubPanelStyle}"
                             CornerRadius="20"
-                            Padding="16"
+                            Padding="18"
                             Margin="0,0,0,10">
 
                         <Grid>
@@ -585,6 +561,23 @@
                             </Border>
 
                             <Border Grid.Row="1"
+                                    Grid.Column="6"
+                                    x:Name="RecoverMoveButton"
+                                    Style="{StaticResource GlassButtonStyle}"
+                                    CornerRadius="14"
+                                    Height="42"
+                                    Margin="0,12,8,0"
+                                    Cursor="Hand"
+                                    Visibility="Collapsed">
+                                <TextBlock Text="복구 이동"
+                                           FontSize="14"
+                                           FontWeight="Bold"
+                                           Foreground="#087A3A"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"/>
+                            </Border>
+
+                            <Border Grid.Row="1"
                                     Grid.Column="7"
                                     Grid.ColumnSpan="2"
                                     x:Name="ModeToggleButton"
@@ -616,7 +609,7 @@
                     <Border Grid.Row="1"
                             Style="{StaticResource GlassSubPanelStyle}"
                             CornerRadius="20"
-                            Padding="10"
+                            Padding="12"
                             Margin="0,0,0,10">
 
                         <UniformGrid Columns="9" Rows="1">

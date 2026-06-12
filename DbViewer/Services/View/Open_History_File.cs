@@ -42,8 +42,7 @@ namespace DbViewer.Services.View
         {
             try
             {
-                string copiedDbPath = DbCopyService.CopyDbToTemp(dbPath);
-                HistoryDatabaseValidationResult checkResult = HistoryDatabaseValidator.Check(copiedDbPath);
+                HistoryDatabaseValidationResult checkResult = HistoryDatabaseValidator.Check(dbPath);
 
                 if (!checkResult.Success)
                 {
@@ -54,7 +53,7 @@ namespace DbViewer.Services.View
                     };
                 }
 
-                return ToSuccessResult(copiedDbPath, checkResult);
+                return ToSuccessResult(dbPath, checkResult);
             }
             catch (Exception ex)
             {

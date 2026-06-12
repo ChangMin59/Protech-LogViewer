@@ -197,11 +197,7 @@ namespace DbViewer
             UpdateDateArrowVisibility();
             DateCalendarDropdown.Visibility = Visibility.Collapsed;
 
-            FixedTimeRowsPanel.Children.Clear();
-            LogRowsPanel.Children.Clear();
-
-            FixedTimeRowsPanel.Children.Add(Render_Log_Row.CreateFixedEmptyCell());
-            LogRowsPanel.Children.Add(Render_Log_Row.CreateEmptyRow(emptyRowMessage));
+            ShowLogEmptyRow(emptyRowMessage);
         }
 
         private static void ShowInvalidDbHistoryFileMessage(string title)

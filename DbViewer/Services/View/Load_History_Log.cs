@@ -18,7 +18,7 @@ namespace DbViewer.Services.View
         /// 선택된 SQLite DB가 이력 보기용 DB인지 검사한다.
         /// 
         /// 검사 내용:
-        /// 1. SQLite 무결성 검사
+        /// 1. SQLite 빠른 검사
         /// 2. Log 테이블 존재 여부 확인
         /// </summary>
         public void Validate()
@@ -27,13 +27,13 @@ namespace DbViewer.Services.View
             connection.Open();
 
             using SqliteCommand integrityCommand = connection.CreateCommand();
-            integrityCommand.CommandText = "PRAGMA integrity_check;";
+            integrityCommand.CommandText = "PRAGMA quick_check;";
 
             object? integrityResult = integrityCommand.ExecuteScalar();
 
             if (integrityResult?.ToString() != "ok")
             {
-                throw new Exception($"DB 무결성 검사 실패: {integrityResult}");
+                throw new Exception($"DB 빠른 검사 실패: {integrityResult}");
             }
 
             using SqliteCommand tableCommand = connection.CreateCommand();
@@ -357,7 +357,7 @@ namespace DbViewer.Services.View
         /// 
         /// Mode=ReadOnly:
         /// - 조회 전용으로 연다.
-        /// - 원본이 아니라 임시 복사본 DB를 읽는 구조에 적합하다.
+        /// - 원본 DB를 수정하지 않고 직접 읽는 구조에 적합하다.
         /// </summary>
         private SqliteConnection CreateConnection()
         {

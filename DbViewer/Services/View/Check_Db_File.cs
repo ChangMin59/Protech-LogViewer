@@ -41,7 +41,7 @@ namespace DbViewer.Services.View
 
                 string integrityResult = ExecuteScalarText(
                     connection,
-                    "PRAGMA integrity_check;"
+                    "PRAGMA quick_check;"
                 );
 
                 if (!string.Equals(integrityResult, "ok", StringComparison.OrdinalIgnoreCase))
@@ -49,7 +49,7 @@ namespace DbViewer.Services.View
                     return new HistoryDatabaseValidationResult
                     {
                         Success = false,
-                        ErrorMessage = $"DB 무결성 검사 실패: {integrityResult}"
+                        ErrorMessage = $"DB 빠른 검사 실패: {integrityResult}"
                     };
                 }
 

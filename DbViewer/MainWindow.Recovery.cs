@@ -61,11 +61,7 @@ namespace DbViewer
                     return;
                 }
 
-                FixedTimeRowsPanel.Children.Clear();
-                LogRowsPanel.Children.Clear();
-
-                FixedTimeRowsPanel.Children.Add(Render_Log_Row.CreateFixedEmptyCell());
-                LogRowsPanel.Children.Add(Render_Log_Row.CreateEmptyRow(""));
+                ShowLogEmptyRow("");
             }
             catch
             {
@@ -113,11 +109,7 @@ namespace DbViewer
 
         private void ShowRecoveryFailedState(MessageBoxImage icon, string detailMessage = "")
         {
-            FixedTimeRowsPanel.Children.Clear();
-            LogRowsPanel.Children.Clear();
-
-            FixedTimeRowsPanel.Children.Add(Render_Log_Row.CreateFixedEmptyCell());
-            LogRowsPanel.Children.Add(Render_Log_Row.CreateEmptyRow(""));
+            ShowLogEmptyRow("");
 
             string message = "이력 파일 복구에 실패했습니다.";
 

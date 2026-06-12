@@ -50,7 +50,7 @@ namespace DbViewer.Services.Render
 
             Border border = new()
             {
-                MinHeight = 50,
+                Height = 50,
                 Background = LogStyleMapper.GetRowFill(rowTag),
                 BorderBrush = LogStyleMapper.GridLineBrush(),
                 BorderThickness = new Thickness(0, 0, 1, 1),
@@ -91,7 +91,7 @@ namespace DbViewer.Services.Render
 
             Border border = new()
             {
-                MinHeight = 50,
+                Height = 50,
                 MinWidth = 930,
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 Background = LogStyleMapper.GetRowFill(rowTag),
