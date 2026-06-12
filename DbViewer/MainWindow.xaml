@@ -720,6 +720,7 @@
                     </Border>
 
                     <Border Grid.Row="2"
+                            x:Name="LogTableContainer"
                             Background="{StaticResource TablePanelBrush}"
                             BorderBrush="#E6FFFFFF"
                             BorderThickness="1"
@@ -727,7 +728,7 @@
                             Margin="0,0,0,10"
                             ClipToBounds="True">
 
-                        <Grid>
+                        <Grid x:Name="LogTableClipGrid">
                             <Grid.ColumnDefinitions>
                                 <!-- 발생시간 고정 컬럼 -->
                                 <ColumnDefinition Width="168"/>

@@ -150,6 +150,8 @@ namespace DbViewer
             InitializeComponent();
 
             RootGrid.Focusable = true;
+            LogTableClipGrid.SizeChanged += (_, _) => UpdateLogTableRoundedClip();
+
             SourceInitialized += (_, _) =>
             {
                 _largeScreenHwndSource = PresentationSource.FromVisual(this) as HwndSource;
@@ -173,6 +175,19 @@ namespace DbViewer
 
             InitializeEvents();
             InitializeDefaultText();
+        }
+
+        private void UpdateLogTableRoundedClip()
+        {
+            if (LogTableClipGrid.ActualWidth <= 0 || LogTableClipGrid.ActualHeight <= 0)
+            {
+                return;
+            }
+
+            LogTableClipGrid.Clip = new RectangleGeometry(
+                new Rect(0, 0, LogTableClipGrid.ActualWidth, LogTableClipGrid.ActualHeight),
+                LogTableContainer.CornerRadius.TopLeft,
+                LogTableContainer.CornerRadius.TopLeft);
         }
 
         private void ApplyInitialWindowSizeForLargeScreen()
