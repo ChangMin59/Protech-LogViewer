@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
 
 namespace DbViewer
 {
@@ -235,6 +236,40 @@ namespace DbViewer
                     onClick: async () => await MoveLastPageAsync()
                 ));
             }
+
+            KeepPaginationAwayFromPageInfo();
+        }
+
+        // 페이지 버튼은 전체 하단 중앙에 두고, 오른쪽 페이지 정보 영역과 겹칠 때만 왼쪽으로 피한다.
+        private void KeepPaginationAwayFromPageInfo()
+        {
+            _ = Dispatcher.BeginInvoke(new Action(() =>
+            {
+                const double minimumGap = 18.0;
+
+                PaginationPanelTransform.X = 0;
+                RootGrid.UpdateLayout();
+
+                if (PaginationPanel.ActualWidth <= 0 || TotalPageInfoText.ActualWidth <= 0)
+                {
+                    return;
+                }
+
+                double paginationRight = PaginationPanel
+                    .TranslatePoint(new Point(PaginationPanel.ActualWidth, 0), RootGrid)
+                    .X;
+                double pageInfoLeft = TotalPageInfoText
+                    .TranslatePoint(new Point(0, 0), RootGrid)
+                    .X;
+                double overlap = paginationRight + minimumGap - pageInfoLeft;
+
+                if (overlap <= 0)
+                {
+                    return;
+                }
+
+                PaginationPanelTransform.X = -overlap;
+            }), DispatcherPriority.Loaded);
         }
 
         // 첫 페이지로 이동한다.
