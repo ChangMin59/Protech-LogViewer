@@ -20,7 +20,7 @@ namespace DbViewer
         }
 
         // 시작일/종료일 텍스트 기준으로 해당 기간 로그 첫 페이지를 보여준다.
-        private async Task LoadDateFirstPageAsync()
+        private async Task LoadDateFirstPageAsync(PeriodPreset periodPreset = PeriodPreset.Custom)
         {
             if (_repository == null)
             {
@@ -50,6 +50,10 @@ namespace DbViewer
                 ShowInvalidDateRangeMessage("시작일은 종료일보다 늦을 수 없습니다.");
                 return;
             }
+
+            // 조회가 오래 걸려도 사용자가 선택한 기간 프리셋은 즉시 표시한다.
+            _currentPeriodPreset = periodPreset;
+            UpdatePeriodPresetButtonStates();
 
             // 기간 조회는 화재/제경보 카테고리 필터와 동시에 유지하지 않는다.
             _selectedCategories.Clear();
@@ -93,6 +97,16 @@ namespace DbViewer
                 return;
             }
 
+            PeriodPreset periodPreset = days == 7
+                ? PeriodPreset.SevenDays
+                : days == 30
+                    ? PeriodPreset.ThirtyDays
+                    : PeriodPreset.Custom;
+
+            // DB 날짜 범위를 읽기 전 먼저 버튼 선택 상태를 보여준다.
+            _currentPeriodPreset = periodPreset;
+            UpdatePeriodPresetButtonStates();
+
             // DB 실제 날짜 범위에서 최신 날짜를 가져온다.
             (string startDate, string endDate) range = await Task.Run(() =>
                 _repository.GetLogDateRange()
@@ -114,7 +128,7 @@ namespace DbViewer
             UpdateDateArrowVisibility();
 
             // 날짜 텍스트를 바꾼 뒤 실제 기간 조회를 실행한다.
-            await LoadDateFirstPageAsync();
+            await LoadDateFirstPageAsync(periodPreset);
         }
 
         // 전체 버튼을 눌렀을 때 DB 전체 기간과 전체 로그 첫 페이지로 돌아간다.
@@ -124,6 +138,10 @@ namespace DbViewer
             {
                 return;
             }
+
+            // DB 날짜 범위를 읽기 전 먼저 전체 버튼 선택 상태를 보여준다.
+            _currentPeriodPreset = PeriodPreset.All;
+            UpdatePeriodPresetButtonStates();
 
             // DB 안의 가장 오래된 날짜와 최신 날짜를 읽는다.
             (string startDate, string endDate) range = await Task.Run(() =>

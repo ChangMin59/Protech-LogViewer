@@ -63,7 +63,7 @@ namespace DbViewer
             AttachPointerAction(FileSaveButton, SaveCurrentLogsToPrintHtmlAsync);
 
             // 기간 버튼 연결이다. PeriodSearchButton은 남아 있지만 날짜 선택 자체가 즉시 조회를 수행한다.
-            AttachPointerAction(PeriodSearchButton, LoadDateFirstPageAsync);
+            AttachPointerAction(PeriodSearchButton, async () => await LoadDateFirstPageAsync());
             AttachPointerAction(AllPeriodButton, ApplyAllPeriodAsync);
             AttachPointerAction(SevenDaysButton, async () => await ApplyRecentDaysAsync(7));
             AttachPointerAction(ThirtyDaysButton, async () => await ApplyRecentDaysAsync(30));

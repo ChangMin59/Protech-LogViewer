@@ -1,3 +1,7 @@
+using DbViewer.Models;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace DbViewer
@@ -28,22 +32,50 @@ namespace DbViewer
             _selectedCategories.Clear();
             UpdateCategoryCardActiveStates();
 
+            bool searchInCurrentPeriod =
+                (_currentMode == "date_cache" || _currentMode == "date") &&
+                IsValidDate(_currentStartDate) &&
+                IsValidDate(_currentEndDate);
+
+            string periodStartDate = searchInCurrentPeriod ? _currentStartDate : "";
+            string periodEndDate = searchInCurrentPeriod ? _currentEndDate : "";
+            string periodCacheKey = searchInCurrentPeriod
+                ? MakePeriodCacheKey(periodStartDate, periodEndDate)
+                : "all";
+
             // 현재 조회 상태를 검색 모드로 기록한다.
             _currentMode = "search";
             _currentKeyword = keyword;
-            _currentStartDate = "";
-            _currentEndDate = "";
+            _currentStartDate = periodStartDate;
+            _currentEndDate = periodEndDate;
             _currentPage = 1;
+            _activeRowsCacheKey = periodCacheKey;
 
-            // 실제 검색 대상 컬럼: Type, Action, Section, Contents, Packet.
-            _totalCount = await Task.Run(() => _repository.CountSearchLogs(_currentKeyword));
+            if (searchInCurrentPeriod)
+            {
+                // 기간 조회 중 검색하면 전체 DB가 아니라 해당 기간 캐시 안에서만 검색한다.
+                List<LogRow>? cachedRows = await GetOrBuildRowsCacheAsync(periodStartDate, periodEndDate);
+
+                if (cachedRows == null)
+                {
+                    return;
+                }
+
+                _totalCount = cachedRows.Count(row => IsRowMatchedBySearchFields(row, _currentKeyword));
+            }
+            else
+            {
+                // 전체 로그 상태에서는 기존처럼 DB 전체를 검색한다.
+                _totalCount = await Task.Run(() => _repository.CountSearchLogs(_currentKeyword));
+            }
+
             _totalPages = CalculateTotalPages(_totalCount);
 
             // 검색 결과 첫 페이지를 렌더링한다.
             await LoadCurrentPageAsync();
         }
 
-        // 검색어를 지우고 전체 로그 첫 페이지로 돌아간다.
+        // 검색어를 지우고 검색 전 조회 조건으로 돌아간다.
         private async Task ClearSearchKeywordAndReloadAllAsync()
         {
             // 터치 키보드 사용 흐름을 위해 검색창 포커스와 커서를 유지한다.
@@ -59,9 +91,43 @@ namespace DbViewer
                 return;
             }
 
-            // 전체 로그로 돌아가므로 카테고리 선택을 모두 해제한다.
+            // 검색어만 지우고 카테고리 선택은 해제 상태를 유지한다.
             _selectedCategories.Clear();
             UpdateCategoryCardActiveStates();
+
+            bool restorePeriod =
+                _currentMode == "search" &&
+                IsValidDate(_currentStartDate) &&
+                IsValidDate(_currentEndDate) &&
+                _activeRowsCacheKey != "all";
+
+            if (restorePeriod)
+            {
+                // 기간 상태에서 검색한 경우 X 버튼은 검색어만 지우고 해당 기간 전체 로그로 돌아간다.
+                string startDate = _currentStartDate;
+                string endDate = _currentEndDate;
+
+                _currentMode = "date_cache";
+                _currentKeyword = "";
+                _currentPage = 1;
+                _activeRowsCacheKey = MakePeriodCacheKey(startDate, endDate);
+
+                List<LogRow>? cachedRows = await GetOrBuildRowsCacheAsync(startDate, endDate);
+
+                if (cachedRows == null)
+                {
+                    return;
+                }
+
+                _totalCount = cachedRows.Count;
+                _totalPages = CalculateTotalPages(_totalCount);
+                TotalLogCountText.Text = _totalCount.ToString("N0");
+
+                SaveBaseQueryState();
+
+                await LoadCurrentPageAsync(showLoading: false, resetScroll: true);
+                return;
+            }
 
             // 현재 조회 상태를 전체 로그 기준으로 초기화한다.
             _currentMode = "all";
@@ -81,6 +147,21 @@ namespace DbViewer
             SaveBaseQueryState();
 
             await LoadCurrentPageAsync(showLoading: false, resetScroll: true);
+        }
+
+        // 검색어가 실제 로그 주요 컬럼 중 하나에 들어 있는지 확인한다.
+        private static bool IsRowMatchedBySearchFields(LogRow row, string keyword)
+        {
+            if (string.IsNullOrWhiteSpace(keyword))
+            {
+                return true;
+            }
+
+            return row.Type.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
+                   row.Action.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
+                   row.Section.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
+                   row.Contents.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
+                   row.Packet.Contains(keyword, StringComparison.OrdinalIgnoreCase);
         }
     }
 }

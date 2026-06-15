@@ -157,10 +157,12 @@ namespace DbViewer
                 _currentEndDate = "";
                 _currentPage = 1;
                 _activeRowsCacheKey = "all";
+                _currentPeriodPreset = PeriodPreset.All;
 
                 TotalLogCountText.Text = _totalCount.ToString("N0");
 
                 UpdateCategoryCardActiveStates();
+                UpdatePeriodPresetButtonStates();
 
                 // 전체 카테고리 카운트는 백그라운드에서 천천히 계산한다.
                 StartBackgroundCategoryCache();
@@ -198,12 +200,14 @@ namespace DbViewer
             _currentEndDate = "";
             _currentPage = 1;
             _activeRowsCacheKey = "all";
+            _currentPeriodPreset = PeriodPreset.All;
 
             // 실제 DB 전체 건수를 다시 읽어 페이지 수를 계산한다.
             _totalCount = await Task.Run(() => _repository.CountAllLogs());
             _totalPages = CalculateTotalPages(_totalCount);
 
             TotalLogCountText.Text = _totalCount.ToString("N0");
+            UpdatePeriodPresetButtonStates();
 
             // 전체 로그 상태를 카테고리 해제/이동모드 기준 상태로 저장한다.
             SaveBaseQueryState();
@@ -267,7 +271,9 @@ namespace DbViewer
             EndDateText.Text = "";
             _dbStartDate = null;
             _dbEndDate = null;
+            _currentPeriodPreset = PeriodPreset.All;
             UpdateDateArrowVisibility();
+            UpdatePeriodPresetButtonStates();
             DateCalendarDropdown.Visibility = Visibility.Collapsed;
 
             ShowLogEmptyRow(emptyRowMessage);

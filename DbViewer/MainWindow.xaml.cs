@@ -34,6 +34,8 @@ namespace DbViewer
         // 예: pageSize=25이면 최신순 25개 LogRow가 들어간다.
         private List<LogRow> _currentRows = new();
 
+        // 기간 조회 프리셋 버튼의 현재 선택 상태다.
+        private PeriodPreset _currentPeriodPreset = PeriodPreset.All;
         // 현재 조회 모드다. all/search/date/date_cache/category 중 하나로 흐름을 구분한다.
         private string _currentMode = "all";
         // 검색 모드에서 실제로 사용 중인 검색어다.
@@ -191,6 +193,14 @@ namespace DbViewer
             public int PageNumber { get; init; }
             // 해당 페이지 안의 행 index. 0부터 시작한다.
             public int RowIndexInPage { get; init; }
+        }
+
+        private enum PeriodPreset
+        {
+            All,
+            SevenDays,
+            ThirtyDays,
+            Custom
         }
         // 메인 창을 초기화하고 이벤트/기본 화면/대형 화면 고정을 설정한다.
         public MainWindow()
@@ -418,6 +428,7 @@ namespace DbViewer
             UpdateRecoverMoveButtonVisibility();
 
             UpdatePageSizeDropdownStyle();
+            UpdatePeriodPresetButtonStates();
             RebuildPaginationButtons();
         }
 
@@ -1186,14 +1197,27 @@ namespace DbViewer
                 }
                 else if (_currentMode == "search")
                 {
-                    // 검색 로그: DB에서 검색 조건에 맞는 현재 페이지만 읽는다.
+                    // 검색 로그: 기간 검색이면 기간 캐시에서, 전체 검색이면 DB에서 현재 페이지만 읽는다.
                     string keyword = _currentKeyword;
                     int page = _currentPage;
                     int pageSize = _pageSize;
 
-                    rows = await Task.Run(() =>
-                        _repository.SearchLogsPage(keyword, page, pageSize), token
-                    );
+                    if (IsValidDate(_currentStartDate) &&
+                        IsValidDate(_currentEndDate) &&
+                        _activeRowsCacheKey != "all")
+                    {
+                        string cacheKey = _activeRowsCacheKey;
+
+                        rows = await Task.Run(() =>
+                            GetSearchRowsPageFromCache(cacheKey, keyword, page, pageSize), token
+                        );
+                    }
+                    else
+                    {
+                        rows = await Task.Run(() =>
+                            _repository.SearchLogsPage(keyword, page, pageSize), token
+                        );
+                    }
                 }
                 else if (_currentMode == "date_cache")
                 {
@@ -1819,6 +1843,27 @@ namespace DbViewer
             }
         }
 
+        // 기간 캐시 목록에서 검색어에 맞는 현재 page/pageSize 로그만 잘라온다.
+        private List<LogRow> GetSearchRowsPageFromCache(string cacheKey, string keyword, int page, int pageSize)
+        {
+            lock (_queryCacheLock)
+            {
+                if (!_rowsCacheByKey.TryGetValue(cacheKey, out List<LogRow>? rows))
+                {
+                    return new List<LogRow>();
+                }
+
+                int safePage = Math.Max(1, page);
+                int safePageSize = Math.Max(1, pageSize);
+
+                return rows
+                    .Where(row => IsRowMatchedBySearchFields(row, keyword))
+                    .Skip((safePage - 1) * safePageSize)
+                    .Take(safePageSize)
+                    .ToList();
+            }
+        }
+
         // 기간 캐시 키를 만든다.
         // 예: start/end가 있으면 date:2026-06-01~2026-06-07, 없으면 all.
         private static string MakePeriodCacheKey(string startDate, string endDate)
@@ -2062,6 +2107,36 @@ namespace DbViewer
             SetCardActive(EtcLogButton, _selectedCategories.Contains("other"));
         }
 
+        // 전체/7일/30일 기간 프리셋 버튼의 선택 테두리를 갱신한다.
+        private void UpdatePeriodPresetButtonStates()
+        {
+            bool hasOpenedHistory = _repository != null;
+
+            SetPeriodPresetButtonActive(
+                AllPeriodButton,
+                hasOpenedHistory && _currentPeriodPreset == PeriodPreset.All);
+            SetPeriodPresetButtonActive(
+                SevenDaysButton,
+                hasOpenedHistory && _currentPeriodPreset == PeriodPreset.SevenDays);
+            SetPeriodPresetButtonActive(
+                ThirtyDaysButton,
+                hasOpenedHistory && _currentPeriodPreset == PeriodPreset.ThirtyDays);
+        }
+
+        // 선택된 기간 프리셋 버튼은 빨간 테두리로 표시하고, 나머지는 기본 테두리로 되돌린다.
+        private static void SetPeriodPresetButtonActive(Border button, bool isActive)
+        {
+            if (isActive)
+            {
+                button.BorderBrush = new SolidColorBrush(Color.FromRgb(255, 90, 61));
+                button.BorderThickness = new Thickness(2);
+                return;
+            }
+
+            button.BorderBrush = new SolidColorBrush(Color.FromRgb(255, 255, 255));
+            button.BorderThickness = new Thickness(1);
+        }
+
         // 카드 active 여부에 따라 테두리/배경 스타일을 적용한다.
         private void SetCardActive(Border card, bool isActive)
         {
@@ -2177,8 +2252,6 @@ namespace DbViewer
         protected override void OnClosed(EventArgs e)
         {
             CancelRunningJobs();
-            // 프로그램 종료 시 TabTip/osk 등 터치 키보드 프로세스를 닫는다.
-            CloseTouchKeyboardProcesses();
             base.OnClosed(e);
         }
     }
