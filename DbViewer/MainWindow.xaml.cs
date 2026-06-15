@@ -483,6 +483,12 @@ namespace DbViewer
             {
                 ClearMoveTargetHighlight();
 
+                if (_pageSize == 25)
+                {
+                    // 이동모드에서는 다음 대상 탐색 범위를 넓히기 위해 기본 25건 화면을 1,000건으로 전환한다.
+                    await ChangePageSizeAsync(1000);
+                }
+
                 if (_currentMode == "category")
                 {
                     // 카테고리 필터 상태에서 이동모드로 들어가면 필터를 풀고 이전 기본 조회 범위로 돌아간다.

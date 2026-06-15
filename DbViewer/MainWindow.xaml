@@ -334,6 +334,16 @@
                                 </StackPanel>
                             </Grid>
                         </Border>
+
+                        <TextBlock Grid.Column="3"
+                                   Text="Ver 1.0"
+                                   FontSize="20"
+                                   FontWeight="Bold"
+                                   Foreground="#506078"
+                                   HorizontalAlignment="Right"
+                                   VerticalAlignment="Top"
+                                   Margin="0,0,8,0"
+                                   IsHitTestVisible="False"/>
                     </Grid>
                 </Border>
 

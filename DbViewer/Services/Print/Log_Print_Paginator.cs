@@ -16,7 +16,7 @@ namespace DbViewer.Services.Print
         private const double PageFallbackHeight = 1122.0;
         // 인쇄 테이블 헤더/행/여백 치수다.
         private const double TableHeaderHeight = 22.0;
-        private const double TableRowHeight = 19.0;
+        private const double TableRowHeight = 23.0;
         private const double HeaderTableSpacing = 8.0;
         private const double ContinuationHeaderHeight = 26.0;
         private const double ContinuationHeaderSpacing = 6.0;
@@ -29,6 +29,9 @@ namespace DbViewer.Services.Print
         private const double SummaryCardHeight = 36.0;
         private const double SummaryCardGap = 4.0;
         private const double CellHorizontalPadding = 4.0;
+        private const double LogRowFontSize = 10.0;
+        private const double LogBadgeFontSize = 8.4;
+        private const double LogBadgeHeight = 14.5;
         private const double PixelsPerDip = 1.0;
 
         // 현장 한글 로그가 깨지지 않도록 맑은 고딕을 기본 인쇄 폰트로 쓴다.
@@ -428,7 +431,7 @@ namespace DbViewer.Services.Print
                         values[column],
                         Deflate(rect, CellHorizontalPadding, 0),
                         rowText,
-                        8.3,
+                        LogRowFontSize,
                         bold ? FontWeights.ExtraBold : FontWeights.Normal,
                         alignment);
                 }
@@ -461,8 +464,8 @@ namespace DbViewer.Services.Print
                 }
 
                 // 예: MCC, ON, OFF, 출력 ON 배지 폭을 라벨 길이에 맞춰 계산한다.
-                double badgeWidth = Math.Max(28, badge.Label.Length * 5 + 10);
-                Rect badgeRect = new(contentX, rect.Top + ((rect.Height - 12) / 2), badgeWidth, 12);
+                double badgeWidth = Math.Max(34, badge.Label.Length * 6 + 12);
+                Rect badgeRect = new(contentX, rect.Top + ((rect.Height - LogBadgeHeight) / 2), badgeWidth, LogBadgeHeight);
                 Pen badgeBorderPen = FrozenPen(badge.Border, 1);
 
                 dc.DrawRoundedRectangle(badge.Fill, badgeBorderPen, badgeRect, 3, 3);
@@ -471,7 +474,7 @@ namespace DbViewer.Services.Print
                     badge.Label,
                     Deflate(badgeRect, 3, 0),
                     badge.Text,
-                    7,
+                    LogBadgeFontSize,
                     FontWeights.Black,
                     TextAlignment.Center);
 
@@ -490,7 +493,7 @@ namespace DbViewer.Services.Print
                 value ?? "",
                 new Rect(contentX, rect.Top, Math.Max(0, rect.Right - contentX), rect.Height),
                 textBrush,
-                8.3,
+                LogRowFontSize,
                 bold ? FontWeights.ExtraBold : FontWeights.Normal,
                 TextAlignment.Left);
         }
