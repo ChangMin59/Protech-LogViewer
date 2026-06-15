@@ -1384,7 +1384,7 @@ namespace DbViewer
             LogRowsPanel.Children.Clear();
 
             FixedTimeRowsPanel.Children.Add(Render_Log_Row.CreateFixedEmptyCell());
-            LogRowsPanel.Children.Add(Render_Log_Row.CreateEmptyRow(message));
+            LogRowsPanel.Children.Add(Render_Log_Row.CreateEmptyRow(message, LogScrollViewer));
         }
 
         // 현재 스크롤 위치 기준으로 보여야 하는 로그 행만 실제 UI로 만든다.
@@ -1448,7 +1448,7 @@ namespace DbViewer
             {
                 // 왼쪽 고정 시간 행과 오른쪽 로그 행을 같은 index로 나란히 생성한다.
                 FixedTimeRowsPanel.Children.Add(Render_Log_Row.CreateFixedTimeCell(_currentRows[i], i));
-                LogRowsPanel.Children.Add(Render_Log_Row.CreateScrollableLogRow(_currentRows[i], i));
+                LogRowsPanel.Children.Add(Render_Log_Row.CreateScrollableLogRow(_currentRows[i], i, LogScrollViewer));
             }
 
             FixedTimeRowsPanel.Children.Add(CreateVirtualSpacer(bottomSpacerHeight));

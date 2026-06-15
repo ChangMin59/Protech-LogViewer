@@ -2,6 +2,7 @@ using DbViewer.Models;
 using DbViewer.Services.Common;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Media;
 
 namespace DbViewer.Services.Render
@@ -11,16 +12,20 @@ namespace DbViewer.Services.Render
     public static class Render_Log_Row
     {
         // 로그가 없거나 파일을 열지 않았을 때 표 안에 안내 행을 만든다.
-        public static UIElement CreateEmptyRow(string message)
+        public static UIElement CreateEmptyRow(string message, FrameworkElement? widthSource = null)
         {
             // 실제 로그 행 높이와 맞춰 빈 상태에서도 표 레이아웃이 흔들리지 않게 한다.
             Border border = new()
             {
                 Height = 58,
+                MinWidth = 930,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
                 Background = new SolidColorBrush(Color.FromRgb(255, 255, 255)),
                 BorderBrush = new SolidColorBrush(Color.FromRgb(221, 232, 242)),
                 BorderThickness = new Thickness(0, 0, 0, 1)
             };
+
+            BindWidthToSource(border, widthSource);
 
             // 예: "이력 파일을 열어주세요.", "표시할 로그가 없습니다.".
             TextBlock text = new()
@@ -97,7 +102,7 @@ namespace DbViewer.Services.Render
 
         // 실제 로그의 구분/상태/위치/내용/패킷을 오른쪽 스크롤 행으로 만든다.
         // 예: 중계기고장 / 발생 / 02# 01계통 005중계기 / 중계기 통신고장 / Packet.
-        public static UIElement CreateScrollableLogRow(LogRow row, int index)
+        public static UIElement CreateScrollableLogRow(LogRow row, int index, FrameworkElement? widthSource = null)
         {
             // rowTag는 행 배경색/글자색과 배지 계산의 기준이다.
             string rowTag = LogClassifier.ClassifyRowTag(row, index);
@@ -116,11 +121,17 @@ namespace DbViewer.Services.Render
                 SnapsToDevicePixels = true
             };
 
+            BindWidthToSource(border, widthSource);
+
             // 테두리/하이라이트 라인을 추가하기 쉽도록 최상위 Grid를 둔다.
             Grid rootGrid = new()
             {
+                MinWidth = 930,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
                 SnapsToDevicePixels = true
             };
+
+            BindWidthToSource(rootGrid, widthSource);
 
             // 실제 로그 컬럼을 고정 폭+가변 폭으로 배치하는 Grid다.
             Grid contentGrid = new()
@@ -129,6 +140,8 @@ namespace DbViewer.Services.Render
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 SnapsToDevicePixels = true
             };
+
+            BindWidthToSource(contentGrid, widthSource);
 
             // Type: 예 "중계기고장", "MCC".
             contentGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(90) });
@@ -154,6 +167,23 @@ namespace DbViewer.Services.Render
             border.Child = rootGrid;
 
             return border;
+        }
+
+        // 헤더/목록이 쓰는 스크롤 영역 ActualWidth와 실제 행 폭을 같은 기준으로 묶는다.
+        private static void BindWidthToSource(FrameworkElement target, FrameworkElement? widthSource)
+        {
+            if (widthSource == null)
+            {
+                return;
+            }
+
+            BindingOperations.SetBinding(
+                target,
+                FrameworkElement.WidthProperty,
+                new Binding(nameof(FrameworkElement.ActualWidth))
+                {
+                    Source = widthSource
+                });
         }
 
         // 고정 폭 텍스트 셀을 추가한다.

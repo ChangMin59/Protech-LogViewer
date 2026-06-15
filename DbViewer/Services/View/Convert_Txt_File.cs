@@ -17,9 +17,29 @@ namespace DbViewer.Services.View
 
     public static class TxtHistoryConverter
     {
+        private const int DateTimeWidth = 24;
+        private const int TypeWidth = 16;
+        private const int ActionWidth = 16;
+        private const int NoPacketSectionStartWidth = 56;
+        private const int NoPacketContentsStartWidth = 106;
+        private const int WithPacketContentsStartWidth = 108;
+        private const int WithPacketPacketStartWidth = 173;
+
+        private enum TxtHistoryFormat
+        {
+            NoPacket,
+            WithPacket
+        }
+
         // TXT 저장 파일을 읽어 화면이 기존 DB와 똑같이 처리할 수 있는 임시 Log DB로 바꾼다.
         // 입력 예: 2026-06-01 17:04:17     중계기고장     발생     02# 01계통 005중계기     중계기 통신고장
         public static TxtHistoryConvertResult ConvertToTempDb(string txtPath)
+        {
+            return ConvertTxtHistoryToTempDb(txtPath);
+        }
+
+        // TXT 이력 파일을 고정폭 display width 기준으로 읽어 임시 SQLite DB로 변환한다.
+        public static TxtHistoryConvertResult ConvertTxtHistoryToTempDb(string txtPath)
         {
             if (string.IsNullOrWhiteSpace(txtPath))
             {
@@ -99,8 +119,8 @@ namespace DbViewer.Services.View
                 using SqliteCommand createCommand = connection.CreateCommand();
                 createCommand.CommandText =
                     "CREATE TABLE Log (" +
-                    "ID INTEGER PRIMARY KEY, " +
-                    "GRP TEXT, " +
+                    "ID INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                    "GRP INTEGER DEFAULT 0, " +
                     "DTIME TEXT, " +
                     "Type TEXT, " +
                     "Action TEXT, " +
@@ -118,12 +138,11 @@ namespace DbViewer.Services.View
                 insertCommand.Transaction = transaction;
                 insertCommand.CommandText =
                     "INSERT INTO Log " +
-                    "(ID, GRP, DTIME, Type, Action, Section, Contents, Packet) " +
+                    "(GRP, DTIME, Type, Action, Section, Contents, Packet) " +
                     "VALUES " +
-                    "($id, $grp, $dtime, $type, $action, $section, $contents, $packet);";
+                    "($grp, $dtime, $type, $action, $section, $contents, $packet);";
 
-                SqliteParameter idParam = insertCommand.Parameters.Add("$id", SqliteType.Integer);
-                SqliteParameter grpParam = insertCommand.Parameters.Add("$grp", SqliteType.Text);
+                SqliteParameter grpParam = insertCommand.Parameters.Add("$grp", SqliteType.Integer);
                 SqliteParameter dtimeParam = insertCommand.Parameters.Add("$dtime", SqliteType.Text);
                 SqliteParameter typeParam = insertCommand.Parameters.Add("$type", SqliteType.Text);
                 SqliteParameter actionParam = insertCommand.Parameters.Add("$action", SqliteType.Text);
@@ -131,16 +150,11 @@ namespace DbViewer.Services.View
                 SqliteParameter contentsParam = insertCommand.Parameters.Add("$contents", SqliteType.Text);
                 SqliteParameter packetParam = insertCommand.Parameters.Add("$packet", SqliteType.Text);
 
-                // TXT에는 원본 ID가 없으므로 최신순 정렬을 유지하도록 위에서부터 큰 ID를 부여한다.
-                int total = rows.Count;
-
                 for (int i = 0; i < rows.Count; i++)
                 {
                     LogRow row = rows[i];
 
-                    // 예: 첫 줄이 최신 로그이면 가장 큰 ID를 받아 ORDER BY DTIME DESC, ID DESC에서 먼저 나온다.
-                    idParam.Value = total - i;
-                    grpParam.Value = row.Group;
+                    grpParam.Value = 0;
                     dtimeParam.Value = row.DTime;
                     typeParam.Value = row.Type;
                     actionParam.Value = row.Action;
@@ -174,13 +188,14 @@ namespace DbViewer.Services.View
         private static List<LogRow> ReadRows(string txtPath)
         {
             string[] lines = ReadLines(txtPath);
+            TxtHistoryFormat format = DetectTxtHistoryFormat(lines);
 
             List<LogRow> rows = new();
 
             foreach (string line in lines)
             {
                 // 빈 줄, 제목 줄, 날짜 형식이 아닌 줄은 null로 넘어온다.
-                LogRow? row = ParseLine(line);
+                LogRow? row = ParseTxtHistoryLine(line, format);
 
                 if (row == null)
                 {
@@ -191,6 +206,44 @@ namespace DbViewer.Services.View
             }
 
             return rows;
+        }
+
+        // 날짜/시간으로 시작하는 실제 로그 줄을 샘플링해 TXT 고정폭 형식을 판별한다.
+        private static TxtHistoryFormat DetectTxtHistoryFormat(string[] lines)
+        {
+            int sampleCount = 0;
+            int packetCandidateCount = 0;
+
+            foreach (string line in lines)
+            {
+                if (!IsLogLine(line))
+                {
+                    continue;
+                }
+
+                sampleCount++;
+
+                string packetCandidate = SliceByDisplayWidthToEnd(line, WithPacketPacketStartWidth).Trim();
+
+                if (LooksLikePacket(packetCandidate))
+                {
+                    packetCandidateCount++;
+                }
+
+                if (sampleCount >= 200)
+                {
+                    break;
+                }
+            }
+
+            if (sampleCount == 0)
+            {
+                return TxtHistoryFormat.NoPacket;
+            }
+
+            return packetCandidateCount * 2 >= sampleCount
+                ? TxtHistoryFormat.WithPacket
+                : TxtHistoryFormat.NoPacket;
         }
 
         // TXT 파일 인코딩을 읽는다.
@@ -236,9 +289,8 @@ namespace DbViewer.Services.View
                 .Split('\n');
         }
 
-        // TXT 한 줄을 실제 LogRow 컬럼으로 분해한다.
-        // 예: 날짜 / 구분 / 상태 / 위치 / 내용 순서이며, 컬럼 사이가 여러 칸 공백으로 벌어진 형식이다.
-        private static LogRow? ParseLine(string line)
+        // TXT 한 줄을 판별된 고정폭 형식에 맞춰 실제 LogRow 컬럼으로 분해한다.
+        private static LogRow? ParseTxtHistoryLine(string line, TxtHistoryFormat format)
         {
             if (string.IsNullOrWhiteSpace(line))
             {
@@ -246,81 +298,34 @@ namespace DbViewer.Services.View
                 return null;
             }
 
-            string trimmedLine = line.Trim();
-
-            // 실제 이력 줄은 "yyyy-MM-dd HH:mm:ss"로 시작한다.
-            if (!Regex.IsMatch(
-                    trimmedLine,
-                    @"^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}"
-                ))
+            if (!IsLogLine(line))
             {
                 return null;
             }
 
-            // TXT 저장 형식은 컬럼 간격이 여러 칸이므로 2칸 이상 공백으로 나눈다.
-            // 예: "2026-06-01 17:04:17     MCC     02# MCC 스위치 014번 기동     지하주차장..."
-            string[] parts = Regex
-                .Split(trimmedLine, @"\s{2,}")
-                .Where(part => !string.IsNullOrWhiteSpace(part))
-                .Select(part => part.Trim())
-                .ToArray();
+            string dtime = SliceByDisplayWidth(line, 0, DateTimeWidth).Trim();
+            string type = SliceByDisplayWidth(line, DateTimeWidth, DateTimeWidth + TypeWidth).Trim();
+            string action = SliceByDisplayWidth(
+                line,
+                DateTimeWidth + TypeWidth,
+                DateTimeWidth + TypeWidth + ActionWidth).Trim();
 
-            if (parts.Length < 3)
-            {
-                // 날짜/구분/나머지 값이 최소로도 없으면 이력 줄로 볼 수 없다.
-                return null;
-            }
+            int sectionEndWidth = format == TxtHistoryFormat.WithPacket
+                ? WithPacketContentsStartWidth
+                : NoPacketContentsStartWidth;
+            int contentsStartWidth = sectionEndWidth;
 
-            string dtime = parts[0];
-            string type = parts[1];
-            string action = "";
-            string section = "";
-            string contents = "";
+            string section = SliceByDisplayWidth(
+                line,
+                NoPacketSectionStartWidth,
+                sectionEndWidth).Trim();
+            string contents = format == TxtHistoryFormat.WithPacket
+                ? SliceByDisplayWidth(line, contentsStartWidth, WithPacketPacketStartWidth).Trim()
+                : SliceByDisplayWidthToEnd(line, contentsStartWidth).Trim();
+            string packet = format == TxtHistoryFormat.WithPacket
+                ? SliceByDisplayWidthToEnd(line, WithPacketPacketStartWidth).Trim()
+                : "";
 
-            if (parts.Length >= 5)
-            {
-                // 표준 형식: 시간, 구분, 상태, 위치, 내용.
-                // 예: 중계기고장 / 발생 / 02# 01계통 005중계기 / 중계기 통신고장.
-                action = parts[2];
-                section = parts[3];
-                contents = string.Join(" ", parts.Skip(4)).Trim();
-            }
-            else if (parts.Length == 4)
-            {
-                if (IsKnownAction(parts[2]) && !LooksLikeSection(parts[2]))
-                {
-                    // 예: 시간 / 구분 / ON / 02# 수신기 스위치.
-                    action = parts[2];
-                    section = parts[3];
-                    contents = "";
-                }
-                else
-                {
-                    // 예: MCC처럼 상태가 비고 위치/내용만 있는 줄이다.
-                    action = "";
-                    section = parts[2];
-                    contents = parts[3];
-                }
-            }
-            else if (parts.Length == 3)
-            {
-                if (IsKnownAction(parts[2]) && !LooksLikeSection(parts[2]))
-                {
-                    // 예: 시간 / 구분 / 복구 처럼 상태만 있는 짧은 줄이다.
-                    action = parts[2];
-                    section = "";
-                    contents = "";
-                }
-                else
-                {
-                    // 예: 시간 / 구분 / 02# 수신기 같은 위치만 있는 줄이다.
-                    action = "";
-                    section = parts[2];
-                    contents = "";
-                }
-            }
-
-            // TXT에는 Packet이 없으므로 빈 값으로 두고 LogClassifier가 텍스트 기준으로 보정한다.
             return new LogRow
             {
                 Id = 0,
@@ -330,8 +335,69 @@ namespace DbViewer.Services.View
                 Action = NormalizeAction(action),
                 Section = section,
                 Contents = contents,
-                Packet = ""
+                Packet = packet
             };
+        }
+
+        // display width 구간으로 문자열을 자른다.
+        private static string SliceByDisplayWidth(string text, int startWidth, int endWidth)
+        {
+            if (endWidth <= startWidth)
+            {
+                return "";
+            }
+
+            int startIndex = -1;
+            int endIndex = text.Length;
+            int displayWidth = 0;
+
+            for (int i = 0; i < text.Length; i++)
+            {
+                int charWidth = IsWideCharacter(text[i]) ? 2 : 1;
+                int nextDisplayWidth = displayWidth + charWidth;
+
+                if (startIndex < 0 && displayWidth >= startWidth)
+                {
+                    startIndex = i;
+                }
+
+                if (nextDisplayWidth > endWidth)
+                {
+                    endIndex = i;
+                    break;
+                }
+
+                displayWidth = nextDisplayWidth;
+            }
+
+            if (startIndex < 0)
+            {
+                return "";
+            }
+
+            return text[startIndex..endIndex];
+        }
+
+        // display width 시작 위치부터 끝까지 문자열을 자른다.
+        private static string SliceByDisplayWidthToEnd(string text, int startWidth)
+        {
+            int startIndex = -1;
+            int displayWidth = 0;
+
+            for (int i = 0; i < text.Length; i++)
+            {
+                if (displayWidth >= startWidth)
+                {
+                    startIndex = i;
+                    break;
+                }
+
+                displayWidth += IsWideCharacter(text[i]) ? 2 : 1;
+            }
+
+            return startIndex < 0
+                ? ""
+                : text[startIndex..];
         }
 
         // TXT에서 MCC스위치로 온 구분을 화면/필터에서 쓰는 MCC 기준으로 맞춘다.
@@ -355,37 +421,53 @@ namespace DbViewer.Services.View
             return value.Trim();
         }
 
-        // parts[2]가 상태인지 위치인지 구분하기 위한 실제 상태값 목록이다.
-        private static bool IsKnownAction(string value)
+        private static bool IsLogLine(string line)
         {
-            string action = value.Trim();
-
-            return action is
-                "발생" or
-                "소거" or
-                "복구" or
-                "해제" or
-                "ON" or
-                "OFF" or
-                "기동" or
-                "정지" or
-                "자동" or
-                "수동";
+            return Regex.IsMatch(
+                line,
+                @"^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}"
+            );
         }
 
-        // parts[2]가 상태가 아니라 위치/장비명처럼 보이는지 확인한다.
-        private static bool LooksLikeSection(string value)
+        // TXT 마지막 컬럼이 원본 코드(Packet)인지 확인한다.
+        // 일반 한글 내용이 2칸 이상 공백으로 쪼개졌을 때 코드로 오인하지 않기 위한 방어다.
+        private static bool LooksLikePacket(string value)
         {
-            string section = value.Trim();
+            string packet = value.Trim();
 
-            // 예: 02# 01계통 005중계기, 02# MCC 스위치, 02# 수신기.
-            return Regex.IsMatch(section, @"^\d{2}#") ||
-                   section.Contains("수신기") ||
-                   section.Contains("중계반") ||
-                   section.Contains("계통") ||
-                   section.Contains("중계기") ||
-                   section.Contains("MCC") ||
-                   section.Contains("AN");
+            if (packet.Length < 2)
+            {
+                return false;
+            }
+
+            if (packet.Any(char.IsWhiteSpace))
+            {
+                return false;
+            }
+
+            return packet.Any(IsAsciiLetter) &&
+                   packet.Any(char.IsDigit) &&
+                   packet.All(ch => IsAsciiLetter(ch) || char.IsDigit(ch) || ch is '_' or '-' or '#');
+        }
+
+        private static bool IsAsciiLetter(char ch)
+        {
+            return ch is >= 'A' and <= 'Z' or >= 'a' and <= 'z';
+        }
+
+        private static bool IsWideCharacter(char ch)
+        {
+            return ch >= 0x1100 &&
+                   (ch <= 0x115F ||
+                    ch == 0x2329 ||
+                    ch == 0x232A ||
+                    (ch >= 0x2E80 && ch <= 0xA4CF) ||
+                    (ch >= 0xAC00 && ch <= 0xD7A3) ||
+                    (ch >= 0xF900 && ch <= 0xFAFF) ||
+                    (ch >= 0xFE10 && ch <= 0xFE19) ||
+                    (ch >= 0xFE30 && ch <= 0xFE6F) ||
+                    (ch >= 0xFF00 && ch <= 0xFF60) ||
+                    (ch >= 0xFFE0 && ch <= 0xFFE6));
         }
     }
 }
