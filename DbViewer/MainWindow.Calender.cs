@@ -97,11 +97,13 @@ namespace DbViewer
                 return;
             }
 
-            PeriodPreset periodPreset = days == 7
-                ? PeriodPreset.SevenDays
-                : days == 30
-                    ? PeriodPreset.ThirtyDays
-                    : PeriodPreset.Custom;
+            PeriodPreset periodPreset = days switch
+            {
+                1 => PeriodPreset.OneDay,
+                7 => PeriodPreset.SevenDays,
+                30 => PeriodPreset.ThirtyDays,
+                _ => PeriodPreset.Custom
+            };
 
             // DB 날짜 범위를 읽기 전 먼저 버튼 선택 상태를 보여준다.
             _currentPeriodPreset = periodPreset;

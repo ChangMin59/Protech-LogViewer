@@ -198,6 +198,7 @@ namespace DbViewer
         private enum PeriodPreset
         {
             All,
+            OneDay,
             SevenDays,
             ThirtyDays,
             Custom
@@ -2115,6 +2116,9 @@ namespace DbViewer
             SetPeriodPresetButtonActive(
                 AllPeriodButton,
                 hasOpenedHistory && _currentPeriodPreset == PeriodPreset.All);
+            SetPeriodPresetButtonActive(
+                OneDayButton,
+                hasOpenedHistory && _currentPeriodPreset == PeriodPreset.OneDay);
             SetPeriodPresetButtonActive(
                 SevenDaysButton,
                 hasOpenedHistory && _currentPeriodPreset == PeriodPreset.SevenDays);

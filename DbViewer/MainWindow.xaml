@@ -457,22 +457,6 @@
 
                             <Border Grid.Row="0"
                                     Grid.Column="4"
-                                    x:Name="PeriodSearchButton"
-                                    Style="{StaticResource PrimaryButtonStyle}"
-                                    CornerRadius="14"
-                                    Height="42"
-                                    Margin="0,0,10,0"
-                                    Cursor="Hand">
-                                <TextBlock Text="기간 조회"
-                                           FontSize="14"
-                                           FontWeight="Bold"
-                                           Foreground="White"
-                                           HorizontalAlignment="Center"
-                                           VerticalAlignment="Center"/>
-                            </Border>
-
-                            <Border Grid.Row="0"
-                                    Grid.Column="5"
                                     x:Name="AllPeriodButton"
                                     Style="{StaticResource GlassButtonStyle}"
                                     Background="#D8F2F8FF"
@@ -484,6 +468,22 @@
                                            FontSize="13"
                                            FontWeight="Bold"
                                            Foreground="#1467F2"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"/>
+                            </Border>
+
+                            <Border Grid.Row="0"
+                                    Grid.Column="5"
+                                    x:Name="OneDayButton"
+                                    Style="{StaticResource GlassButtonStyle}"
+                                    CornerRadius="14"
+                                    Height="42"
+                                    Margin="0,0,8,0"
+                                    Cursor="Hand">
+                                <TextBlock Text="1일"
+                                           FontSize="13"
+                                           FontWeight="SemiBold"
+                                           Foreground="#23395D"
                                            HorizontalAlignment="Center"
                                            VerticalAlignment="Center"/>
                             </Border>

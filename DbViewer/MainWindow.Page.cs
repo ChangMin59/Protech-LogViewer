@@ -266,10 +266,27 @@ namespace DbViewer
             if (isEnabled)
             {
                 // 마우스 클릭과 터치 입력 모두 같은 페이지 이동 함수를 호출한다.
-                button.MouseLeftButtonUp += async (_, _) => await onClick();
+                button.MouseLeftButtonUp += async (_, e) =>
+                {
+                    e.Handled = true;
+
+                    if (ShouldIgnorePointerAction())
+                    {
+                        return;
+                    }
+
+                    await onClick();
+                };
+
                 button.TouchDown += async (_, e) =>
                 {
                     e.Handled = true;
+
+                    if (ShouldIgnorePointerAction())
+                    {
+                        return;
+                    }
+
                     await onClick();
                 };
             }
