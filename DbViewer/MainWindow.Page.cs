@@ -154,15 +154,36 @@ namespace DbViewer
             // 예: 총 12,000페이지 · 300,000건.
             TotalPageInfoText.Text = $"총 {_totalPages:N0}페이지 · {_totalCount:N0}건";
 
+            List<int> visiblePageNumbers = GetVisiblePageNumbers();
+            int firstVisiblePage = visiblePageNumbers.Count > 0
+                ? visiblePageNumbers[0]
+                : 1;
+            int lastVisiblePage = visiblePageNumbers.Count > 0
+                ? visiblePageNumbers[^1]
+                : 1;
+
+            if (firstVisiblePage > 1)
+            {
+                // 현재 5개 페이지 그룹이 첫 그룹이 아니면 처음 버튼을 보여준다.
+                PaginationPanel.Children.Add(CreatePaginationButton(
+                    text: "«",
+                    isActive: false,
+                    isEnabled: true,
+                    toolTip: "처음",
+                    onClick: async () => await MoveFirstPageAsync()
+                ));
+            }
+
             // 이전 버튼은 1페이지에서는 비활성화된다.
             PaginationPanel.Children.Add(CreatePaginationButton(
-                text: "‹ 이전",
+                text: "‹",
                 isActive: false,
                 isEnabled: _currentPage > 1,
+                toolTip: "이전",
                 onClick: async () => await MovePrevPageAsync()
             ));
 
-            foreach (int pageNumber in GetVisiblePageNumbers())
+            foreach (int pageNumber in visiblePageNumbers)
             {
                 int capturedPage = pageNumber;
 
@@ -171,6 +192,7 @@ namespace DbViewer
                     text: pageNumber.ToString(),
                     isActive: pageNumber == _currentPage,
                     isEnabled: true,
+                    toolTip: null,
                     onClick: async () =>
                     {
                         if (_currentPage == capturedPage)
@@ -195,11 +217,64 @@ namespace DbViewer
 
             // 다음 버튼은 마지막 페이지에서는 비활성화된다.
             PaginationPanel.Children.Add(CreatePaginationButton(
-                text: "다음 ›",
+                text: "›",
                 isActive: false,
                 isEnabled: _currentPage < _totalPages,
+                toolTip: "다음",
                 onClick: async () => await MoveNextPageAsync()
             ));
+
+            if (lastVisiblePage < _totalPages)
+            {
+                // 현재 5개 페이지 그룹 뒤에 페이지가 더 있으면 끝 버튼을 보여준다.
+                PaginationPanel.Children.Add(CreatePaginationButton(
+                    text: "»",
+                    isActive: false,
+                    isEnabled: true,
+                    toolTip: "끝",
+                    onClick: async () => await MoveLastPageAsync()
+                ));
+            }
+        }
+
+        // 첫 페이지로 이동한다.
+        private async Task MoveFirstPageAsync()
+        {
+            if (_repository == null || _currentPage <= 1)
+            {
+                return;
+            }
+
+            ClearMoveTargetHighlight();
+            _currentPage = 1;
+
+            if (_currentMode == "category")
+            {
+                await LoadCategoryPageFromCacheAsync();
+                return;
+            }
+
+            await LoadCurrentPageAsync(showLoading: false);
+        }
+
+        // 마지막 페이지로 이동한다.
+        private async Task MoveLastPageAsync()
+        {
+            if (_repository == null || _currentPage >= _totalPages)
+            {
+                return;
+            }
+
+            ClearMoveTargetHighlight();
+            _currentPage = _totalPages;
+
+            if (_currentMode == "category")
+            {
+                await LoadCategoryPageFromCacheAsync();
+                return;
+            }
+
+            await LoadCurrentPageAsync(showLoading: false);
         }
 
         // 현재 페이지가 속한 5개 단위 페이지 번호 그룹을 반환한다.
@@ -229,16 +304,25 @@ namespace DbViewer
             string text,
             bool isActive,
             bool isEnabled,
+            string? toolTip,
             Func<Task> onClick)
         {
+            bool isNavigationButton = text is "«" or "‹" or "›" or "»";
+
             // 현재 페이지는 주황색, 일반 버튼은 반투명 흰색으로 보인다.
             Border button = new()
             {
+                Width = isNavigationButton ? 40 : double.NaN,
+                MinWidth = isNavigationButton ? 40 : 42,
+                Height = 40,
                 CornerRadius = new CornerRadius(12),
-                Padding = new Thickness(16, 9, 16, 9),
-                Margin = new Thickness(0, 0, 8, 0),
+                Padding = isNavigationButton
+                    ? new Thickness(0)
+                    : new Thickness(10, 8, 10, 8),
+                Margin = new Thickness(0, 0, 6, 0),
                 Cursor = isEnabled ? Cursors.Hand : Cursors.Arrow,
                 Opacity = isEnabled ? 1.0 : 0.45,
+                ToolTip = toolTip,
                 Background = isActive
                     ? new SolidColorBrush(Color.FromRgb(255, 90, 67))
                     : new SolidColorBrush(Color.FromArgb(205, 255, 255, 255)),
@@ -252,7 +336,7 @@ namespace DbViewer
             TextBlock label = new()
             {
                 Text = text,
-                FontSize = 14,
+                FontSize = 15,
                 FontWeight = FontWeights.Bold,
                 Foreground = isActive
                     ? new SolidColorBrush(Color.FromRgb(255, 255, 255))
